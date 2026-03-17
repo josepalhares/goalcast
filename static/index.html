@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en" x-data="goalcastApp()" x-init="init()" :class="darkMode ? 'dark' : ''">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoalCast</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                    colors: {
+                        apple: { blue: '#007AFF', dark: '#1D1D1F', gray: '#6E6E73', border: '#E5E7EB', bg: '#F5F5F7' },
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+        .dark ::-webkit-scrollbar-thumb { background: #374151; }
+        .collapse-body { overflow: hidden; transition: max-height .3s ease, opacity .25s ease; }
+        .collapse-body.collapsed { max-height: 0 !important; opacity: 0; }
+        .toast { animation: toastIn .3s ease, toastOut .3s ease 1.7s forwards; }
+        @keyframes toastIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes toastOut { from { opacity:1; } to { opacity:0; } }
+    </style>
+</head>
+<body class="bg-white dark:bg-[#0f1623] text-apple-dark dark:text-gray-200 min-h-screen antialiased">
+
+    <!-- Toast notification -->
+    <div x-show="toast" x-transition class="fixed top-20 left-1/2 -translate-x-1/2 z-[100]">
+        <div class="toast bg-apple-dark dark:bg-white text-white dark:text-apple-dark text-sm font-semibold px-5 py-2.5 rounded-full shadow-lg" x-text="toast"></div>
+    </div>
+
+    <!-- Header -->
+    <header class="sticky top-0 z-50 bg-white/90 dark:bg-[#151d2e]/90 backdrop-blur-xl border-b border-apple-border dark:border-white/5">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-apple-blue flex items-center justify-center text-white font-bold text-sm">G</div>
+                <span class="text-lg font-bold tracking-tight dark:text-white">GoalCast</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <button @click="toggleTheme()" class="w-8 h-8 rounded-lg bg-apple-bg dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/15 transition">
+                    <template x-if="!darkMode"><svg class="w-4 h-4 text-apple-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg></template>
+                    <template x-if="darkMode"><svg class="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg></template>
+                </button>
+                <button @click="saveAll()" class="h-8 px-3 rounded-lg bg-apple-blue/10 hover:bg-apple-blue/20 text-apple-blue text-xs font-semibold flex items-center gap-1.5 transition">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
+                    Save All
+                </button>
+                <button @click="doRefresh()" :disabled="loading" class="h-8 px-3 rounded-lg bg-apple-blue hover:bg-blue-600 text-white text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-40">
+                    <svg class="w-3.5 h-3.5" :class="loading && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    Refresh
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 mt-6 flex items-center gap-2">
+        <button @click="activeTab = 'matches'" :class="activeTab === 'matches' ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'" class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">Matches</button>
+        <button @click="activeTab = 'history'" :class="activeTab === 'history' ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'" class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">History</button>
+        <span class="ml-auto text-xs text-apple-gray" x-show="!loading" x-text="filteredMatches.length + '/' + allMatches.length + ' matches'"></span>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 mt-3 flex items-center gap-2 flex-wrap" x-show="allMatches.length > 0">
+        <!-- Competitions dropdown -->
+        <div class="relative" x-data="{ open: false }" @click.outside="open = false">
+            <button @click="open = !open" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:border-apple-blue/30 transition">
+                Competitions
+                <span x-show="filterLeagues.length < availableLeagues.length" class="bg-apple-blue text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center" x-text="filterLeagues.length"></span>
+                <svg class="w-3 h-3 text-apple-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div x-show="open" x-transition class="absolute top-10 left-0 z-40 bg-white dark:bg-[#1a2234] border border-apple-border dark:border-white/10 rounded-xl shadow-lg p-2 w-52 max-h-60 overflow-y-auto">
+                <template x-for="lg in availableLeagues" :key="lg">
+                    <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-apple-bg dark:hover:bg-white/5 cursor-pointer">
+                        <input type="checkbox" :value="lg" x-model="filterLeagues" class="rounded border-gray-300 text-apple-blue focus:ring-apple-blue/30 w-3.5 h-3.5">
+                        <span class="text-xs text-apple-dark dark:text-gray-300" x-text="lg"></span>
+                    </label>
+                </template>
+            </div>
+        </div>
+
+        <!-- Teams dropdown -->
+        <div class="relative" x-data="{ open: false, search: '' }" @click.outside="open = false">
+            <button @click="open = !open" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:border-apple-blue/30 transition">
+                Teams
+                <span x-show="filterTeams.length > 0" class="bg-apple-blue text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center" x-text="filterTeams.length"></span>
+                <svg class="w-3 h-3 text-apple-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div x-show="open" x-transition class="absolute top-10 left-0 z-40 bg-white dark:bg-[#1a2234] border border-apple-border dark:border-white/10 rounded-xl shadow-lg p-2 w-56 max-h-64 overflow-y-auto">
+                <input type="text" x-model="search" placeholder="Search teams..." class="w-full px-2 py-1.5 mb-1 text-xs border border-apple-border dark:border-white/10 rounded-lg bg-apple-bg dark:bg-white/5 text-apple-dark dark:text-white focus:outline-none focus:border-apple-blue placeholder-apple-gray">
+                <template x-for="tm in availableTeams.filter(t => !search || t.toLowerCase().includes(search.toLowerCase()))" :key="tm">
+                    <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-apple-bg dark:hover:bg-white/5 cursor-pointer">
+                        <input type="checkbox" :value="tm" x-model="filterTeams" class="rounded border-gray-300 text-apple-blue focus:ring-apple-blue/30 w-3.5 h-3.5">
+                        <span class="text-xs text-apple-dark dark:text-gray-300" x-text="tm"></span>
+                    </label>
+                </template>
+            </div>
+        </div>
+
+        <!-- Dates dropdown -->
+        <div class="relative" x-data="{ open: false }" @click.outside="open = false">
+            <button @click="open = !open" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:border-apple-blue/30 transition">
+                Dates
+                <span x-show="filterDates.length > 0 && filterDates.length < availableDates.length" class="bg-apple-blue text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center" x-text="filterDates.length"></span>
+                <svg class="w-3 h-3 text-apple-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div x-show="open" x-transition class="absolute top-10 left-0 z-40 bg-white dark:bg-[#1a2234] border border-apple-border dark:border-white/10 rounded-xl shadow-lg p-2 w-48 max-h-60 overflow-y-auto">
+                <template x-for="dt in availableDates" :key="dt">
+                    <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-apple-bg dark:hover:bg-white/5 cursor-pointer">
+                        <input type="checkbox" :value="dt" x-model="filterDates" class="rounded border-gray-300 text-apple-blue focus:ring-apple-blue/30 w-3.5 h-3.5">
+                        <span class="text-xs text-apple-dark dark:text-gray-300" x-text="formatDateShort(dt)"></span>
+                    </label>
+                </template>
+            </div>
+        </div>
+
+        <!-- Clear filters -->
+        <button x-show="hasActiveFilters" @click="clearFilters()" class="text-[11px] text-apple-blue hover:underline">Clear filters</button>
+    </div>
+
+    <!-- Content -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+
+        <!-- Loading -->
+        <div x-show="loading" class="flex flex-col items-center py-20">
+            <div class="w-10 h-10 border-[3px] border-apple-blue border-t-transparent rounded-full animate-spin"></div>
+            <p class="mt-4 text-sm text-apple-gray">Loading matches...</p>
+        </div>
+
+        <!-- Error -->
+        <div x-show="error" class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 rounded-xl px-5 py-3 text-sm mb-4" x-text="error"></div>
+
+        <!-- Matches Tab -->
+        <div x-show="activeTab === 'matches' && !loading" class="space-y-6">
+            <template x-for="dateGroup in groupedData" :key="dateGroup.date">
+                <div :id="'date-' + dateGroup.date">
+                    <!-- Date header -->
+                    <button @click="dateGroup.open = !dateGroup.open" class="w-full flex items-center gap-3 mb-3 group cursor-pointer">
+                        <div class="w-[3px] h-7 rounded-full" :class="isToday(dateGroup.date) ? 'bg-apple-blue' : 'bg-gray-200 dark:bg-gray-700'"></div>
+                        <h2 class="text-sm font-bold tracking-wide" :class="isToday(dateGroup.date) ? 'text-apple-blue' : 'text-apple-dark dark:text-gray-300'" x-text="formatDateHeader(dateGroup.date)"></h2>
+                        <span class="text-[10px] font-medium text-apple-gray" x-text="dateGroup.matchCount + ' matches'"></span>
+                        <template x-if="isFuture(dateGroup.date)">
+                            <span class="text-[10px] font-medium text-apple-blue">upcoming</span>
+                        </template>
+                        <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 ml-auto transition-transform" :class="dateGroup.open || '-rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+
+                    <div x-show="isToday(dateGroup.date)" class="h-px bg-apple-blue/20 mb-3"></div>
+
+                    <!-- Leagues -->
+                    <div class="collapse-body space-y-3" :class="dateGroup.open || 'collapsed'" :style="dateGroup.open ? 'max-height:9999px;opacity:1' : ''">
+                        <template x-for="leagueGroup in dateGroup.leagues" :key="leagueGroup.league">
+                            <div class="bg-white dark:bg-[#1a2234] rounded-xl overflow-hidden border border-apple-border dark:border-white/5">
+                                <button @click="leagueGroup.open = !leagueGroup.open" class="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-apple-bg/50 dark:hover:bg-white/[0.03] transition cursor-pointer">
+                                    <span class="w-2 h-2 rounded-full shrink-0" :style="'background:' + leagueColor(leagueGroup.league)"></span>
+                                    <span class="text-xs font-bold uppercase tracking-wider text-apple-gray" x-text="leagueGroup.league"></span>
+                                    <span class="text-[10px] text-gray-400" x-text="leagueGroup.matches.length"></span>
+                                    <svg class="w-3 h-3 text-gray-300 ml-auto transition-transform" :class="leagueGroup.open || '-rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                </button>
+
+                                <div x-show="leagueGroup.open" class="collapse-body" :class="leagueGroup.open || 'collapsed'" :style="leagueGroup.open ? 'max-height:9999px;opacity:1' : ''">
+                                    <template x-for="item in leagueGroup.matches" :key="item.match.api_match_id || getMatchKey(item.match)">
+                                        <div class="border-t border-gray-100 dark:border-white/[0.04] hover:bg-apple-bg/30 dark:hover:bg-white/[0.015] transition-colors"
+                                             :class="getResultBorderClass(item)">
+                                            <div class="px-4 py-3">
+                                                <div class="flex items-center gap-3">
+
+                                                    <!-- Time -->
+                                                    <div class="w-11 shrink-0 text-xs text-apple-gray font-medium tabular-nums" x-text="formatTime(item.match.match_date)"></div>
+
+                                                    <!-- Home team -->
+                                                    <div class="w-[150px] shrink-0 text-right">
+                                                        <div class="text-[13px] font-semibold text-apple-dark dark:text-gray-100 leading-tight" x-text="item.match.home_team"></div>
+                                                        <div class="text-[10px] text-apple-gray tabular-nums" x-text="item.match.home_elo?.toFixed(0)"></div>
+                                                    </div>
+
+                                                    <!-- Probability bar -->
+                                                    <div class="flex-1 min-w-[130px] max-w-[220px]">
+                                                        <div class="flex h-7 rounded-lg overflow-hidden text-[10px] font-bold leading-none">
+                                                            <div class="bg-[#86EFAC] text-gray-800 flex items-center justify-center" :style="'width:' + Math.max(item.prediction.home_win_prob * 100, 14) + '%'" x-text="(item.prediction.home_win_prob * 100).toFixed(0) + '%'"></div>
+                                                            <div class="bg-[#FDE68A] text-gray-700 flex items-center justify-center" :style="'width:' + Math.max(item.prediction.draw_prob * 100, 14) + '%'" x-text="(item.prediction.draw_prob * 100).toFixed(0) + '%'"></div>
+                                                            <div class="bg-[#FCA5A5] text-gray-800 flex items-center justify-center" :style="'width:' + Math.max(item.prediction.away_win_prob * 100, 14) + '%'" x-text="(item.prediction.away_win_prob * 100).toFixed(0) + '%'"></div>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Away team -->
+                                                    <div class="w-[150px] shrink-0">
+                                                        <div class="text-[13px] font-semibold text-apple-dark dark:text-gray-100 leading-tight" x-text="item.match.away_team"></div>
+                                                        <div class="text-[10px] text-apple-gray tabular-nums" x-text="item.match.away_elo?.toFixed(0)"></div>
+                                                    </div>
+
+                                                    <!-- AI prediction -->
+                                                    <div class="w-16 shrink-0 flex flex-col items-center gap-0.5">
+                                                        <div class="text-[13px] font-bold tabular-nums text-apple-dark dark:text-white">
+                                                            <span x-text="item.prediction.predicted_home_goals"></span>
+                                                            <span class="text-gray-300 dark:text-gray-600 mx-px">-</span>
+                                                            <span x-text="item.prediction.predicted_away_goals"></span>
+                                                        </div>
+                                                        <div class="relative w-10 h-1 rounded-full overflow-hidden" style="background:linear-gradient(to right,#EF4444,#F59E0B,#22C55E)">
+                                                            <div class="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-apple-dark dark:bg-white border border-white dark:border-gray-800"
+                                                                 :style="'left:' + Math.max(0, Math.min(100, ((item.prediction.confidence_pct || 30) - 20) / 60 * 100)) + '%'"></div>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- My prediction -->
+                                                    <div class="w-[130px] shrink-0 flex items-center justify-center" x-data="{ justSaved: false }">
+                                                        <!-- Saved/locked state -->
+                                                        <template x-if="isSaved(item.match)">
+                                                            <div class="flex items-center gap-1.5">
+                                                                <span class="text-sm font-bold tabular-nums text-apple-dark dark:text-white" x-text="userPredictions[getMatchKey(item.match)].home + ' - ' + userPredictions[getMatchKey(item.match)].away"></span>
+                                                                <button @click="deletePrediction(item.match)" class="text-gray-300 hover:text-[#EF4444] transition" title="Delete prediction">
+                                                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                                                </button>
+                                                            </div>
+                                                        </template>
+                                                        <!-- Editable state -->
+                                                        <template x-if="!isSaved(item.match)">
+                                                            <div class="flex items-center gap-1">
+                                                                <input type="number" min="0" max="9" placeholder="-"
+                                                                    class="w-8 h-8 text-center text-sm font-bold rounded-lg border border-apple-border dark:border-white/10 bg-transparent dark:text-white focus:outline-none focus:border-apple-blue focus:ring-1 focus:ring-apple-blue/30 transition"
+                                                                    x-model.number="userPredictions[getMatchKey(item.match)].home">
+                                                                <span class="text-gray-300 text-xs">-</span>
+                                                                <input type="number" min="0" max="9" placeholder="-"
+                                                                    class="w-8 h-8 text-center text-sm font-bold rounded-lg border border-apple-border dark:border-white/10 bg-transparent dark:text-white focus:outline-none focus:border-apple-blue focus:ring-1 focus:ring-apple-blue/30 transition"
+                                                                    x-model.number="userPredictions[getMatchKey(item.match)].away">
+                                                                <!-- Save -->
+                                                                <button @click="saveUserPrediction(item.match); justSaved = true; setTimeout(() => justSaved = false, 2000)"
+                                                                    class="w-6 h-6 rounded flex items-center justify-center transition-all shrink-0"
+                                                                    :class="justSaved ? 'bg-apple-blue text-white' : 'text-apple-blue hover:bg-apple-blue/10'">
+                                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                                                                </button>
+                                                                <!-- Clear -->
+                                                                <button @click="clearPrediction(item.match)"
+                                                                    class="w-6 h-6 rounded flex items-center justify-center text-gray-300 hover:text-[#EF4444] transition shrink-0"
+                                                                    title="Clear">
+                                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                                                                </button>
+                                                                <!-- Copy AI -->
+                                                                <button @click="copyAI(item)"
+                                                                    class="text-[10px] font-semibold text-apple-gray hover:text-apple-blue transition shrink-0 px-0.5"
+                                                                    title="Copy AI prediction">AI</button>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+
+                                                    <!-- Actual result + accuracy tag -->
+                                                    <div class="w-24 shrink-0 flex items-center justify-center gap-1.5">
+                                                        <template x-if="item.match.actual_home_goals !== null && item.match.actual_home_goals !== undefined">
+                                                            <div class="flex items-center gap-1.5">
+                                                                <span class="text-sm font-extrabold tabular-nums text-apple-dark dark:text-white" x-text="item.match.actual_home_goals + ' - ' + item.match.actual_away_goals"></span>
+                                                                <span x-show="aiGotExact(item)" class="text-[10px] font-semibold text-[#22C55E]">exact</span>
+                                                                <span x-show="!aiGotExact(item) && aiGotOutcome(item)" class="text-[10px] font-semibold text-[#F59E0B]">close</span>
+                                                                <span x-show="!aiGotExact(item) && !aiGotOutcome(item)" class="text-[10px] font-semibold text-[#EF4444]">miss</span>
+                                                            </div>
+                                                        </template>
+                                                        <template x-if="item.match.actual_home_goals === null || item.match.actual_home_goals === undefined">
+                                                            <span class="text-xs text-gray-300 dark:text-gray-600">—</span>
+                                                        </template>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Empty -->
+        <div x-show="activeTab === 'matches' && !loading && allMatches.length === 0" class="text-center py-20">
+            <div class="text-4xl mb-4">⚽</div>
+            <p class="text-apple-gray text-sm">No matches found</p>
+        </div>
+
+        <!-- History Tab -->
+        <div x-show="activeTab === 'history' && !loading" class="space-y-6">
+
+                <!-- Score Cards -->
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- AI Card -->
+                    <div class="bg-white dark:bg-[#1a2234] rounded-xl border border-apple-border dark:border-white/5 p-5">
+                        <p class="text-[11px] font-semibold text-apple-gray uppercase tracking-wider mb-1">AI Predictions</p>
+                        <p class="text-[11px] text-apple-gray mb-4" x-text="historyStats.total + ' matches analyzed'"></p>
+                        <div class="space-y-2.5">
+                            <div class="flex justify-between items-baseline">
+                                <span class="text-xs text-apple-gray">Exact Score</span>
+                                <span class="text-xl tabular-nums" :class="historyStats.userCount > 0 && historyStats.aiExactRate >= historyStats.userExactRate ? 'font-extrabold text-apple-blue' : 'font-bold text-apple-dark dark:text-white'" x-text="(historyStats.aiExactRate * 100).toFixed(1) + '%'"></span>
+                            </div>
+                            <div class="flex justify-between items-baseline">
+                                <span class="text-xs text-apple-gray">Correct Outcome</span>
+                                <span class="text-xl tabular-nums" :class="historyStats.userCount > 0 && historyStats.aiOutcomeRate >= historyStats.userOutcomeRate ? 'font-extrabold text-apple-blue' : 'font-bold text-apple-dark dark:text-white'" x-text="(historyStats.aiOutcomeRate * 100).toFixed(1) + '%'"></span>
+                            </div>
+                            <div class="flex justify-between items-baseline">
+                                <span class="text-xs text-apple-gray">Avg Error</span>
+                                <span class="text-xl font-bold tabular-nums text-apple-dark dark:text-white" x-text="historyStats.aiMae.toFixed(2) + ' goals'"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- User Card -->
+                    <div class="bg-white dark:bg-[#1a2234] rounded-xl border border-apple-border dark:border-white/5 p-5">
+                        <p class="text-[11px] font-semibold text-apple-gray uppercase tracking-wider mb-1">Your Predictions</p>
+                        <p class="text-[11px] text-apple-gray mb-4" x-text="historyStats.userCount + ' predictions made'"></p>
+                        <template x-if="historyStats.userCount > 0">
+                            <div class="space-y-2.5">
+                                <div class="flex justify-between items-baseline">
+                                    <span class="text-xs text-apple-gray">Exact Score</span>
+                                    <span class="text-xl tabular-nums" :class="historyStats.userExactRate > historyStats.aiExactRate ? 'font-extrabold text-apple-blue' : 'font-bold text-apple-dark dark:text-white'" x-text="(historyStats.userExactRate * 100).toFixed(1) + '%'"></span>
+                                </div>
+                                <div class="flex justify-between items-baseline">
+                                    <span class="text-xs text-apple-gray">Correct Outcome</span>
+                                    <span class="text-xl tabular-nums" :class="historyStats.userOutcomeRate > historyStats.aiOutcomeRate ? 'font-extrabold text-apple-blue' : 'font-bold text-apple-dark dark:text-white'" x-text="(historyStats.userOutcomeRate * 100).toFixed(1) + '%'"></span>
+                                </div>
+                                <div class="flex justify-between items-baseline">
+                                    <span class="text-xs text-apple-gray">Avg Error</span>
+                                    <span class="text-xl tabular-nums" :class="historyStats.userMae < historyStats.aiMae ? 'font-extrabold text-apple-blue' : 'font-bold text-apple-dark dark:text-white'" x-text="historyStats.userMae.toFixed(2) + ' goals'"></span>
+                                </div>
+                            </div>
+                        </template>
+                        <template x-if="historyStats.userCount === 0">
+                            <p class="text-[13px] text-apple-gray leading-relaxed">Save predictions on the Matches tab to see your accuracy stats here.</p>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Charts row -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-white dark:bg-[#1a2234] rounded-xl border border-apple-border dark:border-white/5 p-5">
+                        <p class="text-[11px] font-semibold text-apple-gray uppercase tracking-wider mb-4">Accuracy by League</p>
+                        <div style="height:220px"><canvas :id="'leagueChart-' + _chartKey"></canvas></div>
+                    </div>
+                    <div class="bg-white dark:bg-[#1a2234] rounded-xl border border-apple-border dark:border-white/5 p-5">
+                        <p class="text-[11px] font-semibold text-apple-gray uppercase tracking-wider mb-4">Accuracy Over Time</p>
+                        <div style="height:220px"><canvas :id="'timeChart-' + _chartKey"></canvas></div>
+                    </div>
+                </div>
+
+                <!-- Insights -->
+                <div x-show="historyStats.insights.length > 0" class="space-y-2">
+                    <p class="text-[11px] font-semibold text-apple-gray uppercase tracking-wider mb-2">Insights</p>
+                    <template x-for="(insight, i) in historyStats.insights" :key="i">
+                        <div class="bg-white dark:bg-[#1a2234] rounded-xl border border-apple-border dark:border-white/5 px-4 py-3 flex items-start gap-2.5">
+                            <span class="text-sm shrink-0 mt-px">💡</span>
+                            <p class="text-[13px] text-apple-dark dark:text-gray-300 leading-relaxed" x-text="insight"></p>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Prediction Log -->
+                <div class="bg-white dark:bg-[#1a2234] rounded-xl border border-apple-border dark:border-white/5 overflow-hidden">
+                    <div class="px-5 py-3">
+                        <p class="text-[11px] font-semibold text-apple-gray uppercase tracking-wider">Prediction Log</p>
+                    </div>
+                    <div class="grid grid-cols-12 gap-2 px-5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-apple-gray border-y border-gray-100 dark:border-white/5">
+                        <div class="col-span-1">Date</div>
+                        <div class="col-span-3">Match</div>
+                        <div class="col-span-2 text-center">AI</div>
+                        <div class="col-span-2 text-center">You</div>
+                        <div class="col-span-2 text-center">Actual</div>
+                        <div class="col-span-1 text-center">AI</div>
+                        <div class="col-span-1 text-center">You</div>
+                    </div>
+                    <template x-for="row in historyStats.log" :key="row.key">
+                        <div class="grid grid-cols-12 gap-2 px-5 py-2.5 text-xs border-b border-gray-50 dark:border-white/[0.03] hover:bg-apple-bg/30 dark:hover:bg-white/[0.015] transition-colors">
+                            <div class="col-span-1 text-apple-gray tabular-nums" x-text="row.date.slice(5)"></div>
+                            <div class="col-span-3 font-medium text-apple-dark dark:text-gray-200 truncate" x-text="row.home + ' vs ' + row.away"></div>
+                            <div class="col-span-2 text-center tabular-nums font-semibold text-apple-dark dark:text-gray-300" x-text="row.aiH + ' - ' + row.aiA"></div>
+                            <div class="col-span-2 text-center tabular-nums font-semibold" :class="row.userH !== null ? 'text-apple-dark dark:text-gray-300' : 'text-gray-300 dark:text-gray-600'" x-text="row.userH !== null ? row.userH + ' - ' + row.userA : '—'"></div>
+                            <div class="col-span-2 text-center tabular-nums font-extrabold text-apple-dark dark:text-white" x-text="row.actH + ' - ' + row.actA"></div>
+                            <div class="col-span-1 text-center">
+                                <span :class="{'text-[#22C55E]': row.aiRes === 'exact', 'text-[#F59E0B]': row.aiRes === 'close', 'text-[#EF4444]': row.aiRes === 'miss'}" class="text-[10px] font-semibold" x-text="row.aiRes"></span>
+                            </div>
+                            <div class="col-span-1 text-center">
+                                <span x-show="row.userRes" :class="{'text-[#22C55E]': row.userRes === 'exact', 'text-[#F59E0B]': row.userRes === 'close', 'text-[#EF4444]': row.userRes === 'miss'}" class="text-[10px] font-semibold" x-text="row.userRes"></span>
+                                <span x-show="!row.userRes" class="text-gray-300 dark:text-gray-600">—</span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+        </div>
+    </div>
+
+    <script>
+    function goalcastApp() {
+        return {
+            activeTab: 'matches',
+            loading: false,
+            error: null,
+            allMatches: [],
+            userPredictions: {},
+            savedPredictions: {},
+            darkMode: false,
+            toast: null,
+            _toastTimer: null,
+            // Filters
+            filterLeagues: [],
+            filterTeams: [],
+            filterDates: [],
+
+            get availableLeagues() {
+                const s = new Set();
+                this.allMatches.forEach(m => s.add(m.match.league));
+                return [...s].sort();
+            },
+            get availableTeams() {
+                const s = new Set();
+                this.allMatches.forEach(m => { s.add(m.match.home_team); s.add(m.match.away_team); });
+                return [...s].sort();
+            },
+            get availableDates() {
+                const s = new Set();
+                this.allMatches.forEach(m => s.add(new Date(m.match.match_date).toISOString().slice(0,10)));
+                return [...s].sort();
+            },
+            get hasActiveFilters() {
+                return (this.filterLeagues.length > 0 && this.filterLeagues.length < this.availableLeagues.length)
+                    || this.filterTeams.length > 0
+                    || (this.filterDates.length > 0 && this.filterDates.length < this.availableDates.length);
+            },
+            get filteredMatches() {
+                return this.allMatches.filter(item => {
+                    if (this.filterLeagues.length > 0 && this.filterLeagues.length < this.availableLeagues.length) {
+                        if (!this.filterLeagues.includes(item.match.league)) return false;
+                    }
+                    if (this.filterTeams.length > 0) {
+                        if (!this.filterTeams.includes(item.match.home_team) && !this.filterTeams.includes(item.match.away_team)) return false;
+                    }
+                    if (this.filterDates.length > 0 && this.filterDates.length < this.availableDates.length) {
+                        const d = new Date(item.match.match_date).toISOString().slice(0,10);
+                        if (!this.filterDates.includes(d)) return false;
+                    }
+                    return true;
+                });
+            },
+
+            get groupedData() {
+                const dateMap = {};
+                this.filteredMatches.forEach(item => {
+                    const d = new Date(item.match.match_date);
+                    const dateKey = d.toISOString().slice(0, 10);
+                    if (!dateMap[dateKey]) dateMap[dateKey] = {};
+                    const league = item.match.league;
+                    if (!dateMap[dateKey][league]) dateMap[dateKey][league] = [];
+                    dateMap[dateKey][league].push(item);
+                });
+
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const dates = Object.keys(dateMap).sort();
+
+                return dates.map(date => {
+                    const leagueNames = Object.keys(dateMap[date]).sort();
+                    const leagues = leagueNames.map(league => ({
+                        league,
+                        matches: dateMap[date][league].sort((a, b) =>
+                            new Date(a.match.match_date) - new Date(b.match.match_date)
+                        ),
+                        open: true,
+                    }));
+                    const matchCount = leagues.reduce((sum, l) => sum + l.matches.length, 0);
+                    const isPast = date < todayStr;
+                    return { date, leagues, matchCount, open: !isPast };
+                });
+            },
+
+            async init() {
+                const saved = localStorage.getItem('darkMode');
+                this.darkMode = saved !== null ? saved === 'true' : false;
+                try {
+                    const sp = localStorage.getItem('savedPredictions');
+                    if (sp) this.savedPredictions = JSON.parse(sp);
+                    const up = localStorage.getItem('userPredictions');
+                    if (up) this.userPredictions = JSON.parse(up);
+                } catch (e) {}
+                await this.loadData();
+
+                // Re-render charts when switching to History tab or when filters change
+                this.$watch('activeTab', (val) => {
+                    if (val === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
+                });
+                this.$watch('filterLeagues', () => {
+                    if (this.activeTab === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
+                });
+                this.$watch('filterTeams', () => {
+                    if (this.activeTab === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
+                });
+                this.$watch('filterDates', () => {
+                    if (this.activeTab === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
+                });
+            },
+
+            toggleTheme() {
+                this.darkMode = !this.darkMode;
+                localStorage.setItem('darkMode', this.darkMode);
+            },
+
+            showToast(msg) {
+                this.toast = msg;
+                clearTimeout(this._toastTimer);
+                this._toastTimer = setTimeout(() => { this.toast = null; }, 2000);
+            },
+
+            async loadData() {
+                this.loading = true;
+                this.error = null;
+                try {
+                    // Load from DB (fast, no API calls)
+                    let r = await fetch('/api/matches');
+                    if (!r.ok) throw new Error('Failed to fetch matches');
+                    this.allMatches = await r.json();
+
+                    // If DB is empty, auto-trigger a refresh
+                    if (this.allMatches.length === 0) {
+                        this.showToast('First load — fetching match data...');
+                        await this.doRefresh();
+                        return;
+                    }
+
+                    this._initUserPredictions();
+                    this._scrollToToday();
+                } catch (err) {
+                    this.error = err.message;
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            async doRefresh() {
+                this.loading = true;
+                this.error = null;
+                try {
+                    const r = await fetch('/api/refresh', { method: 'POST' });
+                    if (!r.ok) throw new Error('Refresh failed');
+                    const summary = await r.json();
+                    this.showToast(`+${summary.added} new, ${summary.updated} updated (${summary.total_in_db} total)`);
+
+                    // Reload from DB
+                    const r2 = await fetch('/api/matches');
+                    if (r2.ok) this.allMatches = await r2.json();
+                    this._initUserPredictions();
+                    this._scrollToToday();
+                } catch (err) {
+                    this.error = err.message;
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            _initUserPredictions() {
+                this.allMatches.forEach(item => {
+                    const key = this.getMatchKey(item.match);
+                    if (!this.userPredictions[key]) this.userPredictions[key] = { home: null, away: null };
+                });
+                // Init filter leagues to all available
+                if (this.filterLeagues.length === 0) this.filterLeagues = [...this.availableLeagues];
+            },
+
+            clearFilters() {
+                this.filterLeagues = [...this.availableLeagues];
+                this.filterTeams = [];
+                this.filterDates = [];
+            },
+
+            formatDateShort(dateStr) {
+                const d = new Date(dateStr + 'T12:00:00');
+                return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' });
+            },
+
+            _scrollToToday() {
+                this.$nextTick(() => {
+                    const todayStr = new Date().toISOString().slice(0, 10);
+                    const el = document.getElementById('date-' + todayStr);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+            },
+
+            getMatchKey(match) {
+                return match.api_match_id || `${match.home_team}_${match.away_team}`;
+            },
+
+            isSaved(match) {
+                return !!this.savedPredictions[this.getMatchKey(match)];
+            },
+
+            saveUserPrediction(match) {
+                const key = this.getMatchKey(match);
+                const p = this.userPredictions[key];
+                if (p.home === null || p.home === '' || p.away === null || p.away === '') return false;
+                this.savedPredictions[key] = true;
+                this._persistToStorage();
+                console.log(`Saved: ${match.home_team} ${p.home}-${p.away} ${match.away_team}`);
+                return true;
+            },
+
+            saveAll() {
+                let count = 0;
+                this.allMatches.forEach(item => {
+                    const key = this.getMatchKey(item.match);
+                    if (this.savedPredictions[key]) return; // already saved
+                    const p = this.userPredictions[key];
+                    if (p && p.home !== null && p.home !== '' && p.away !== null && p.away !== '') {
+                        this.savedPredictions[key] = true;
+                        count++;
+                    }
+                });
+                this._persistToStorage();
+                if (count > 0) {
+                    this.showToast(`Saved ${count} prediction${count > 1 ? 's' : ''}`);
+                } else {
+                    this.showToast('No new predictions to save');
+                }
+            },
+
+            copyAI(item) {
+                const key = this.getMatchKey(item.match);
+                this.userPredictions[key] = {
+                    home: item.prediction.predicted_home_goals,
+                    away: item.prediction.predicted_away_goals,
+                };
+            },
+
+            clearPrediction(match) {
+                const key = this.getMatchKey(match);
+                this.userPredictions[key] = { home: null, away: null };
+            },
+
+            async deletePrediction(match) {
+                const key = this.getMatchKey(match);
+                delete this.savedPredictions[key];
+                this.userPredictions[key] = { home: null, away: null };
+                this._persistToStorage();
+                // Call backend DELETE
+                try {
+                    await fetch(`/api/predictions/${key}`, { method: 'DELETE' });
+                } catch (e) {}
+            },
+
+            _persistToStorage() {
+                localStorage.setItem('savedPredictions', JSON.stringify(this.savedPredictions));
+                localStorage.setItem('userPredictions', JSON.stringify(this.userPredictions));
+            },
+
+            isToday(dateStr) {
+                return dateStr === new Date().toISOString().slice(0, 10);
+            },
+
+            isFuture(dateStr) {
+                return dateStr > new Date().toISOString().slice(0, 10);
+            },
+
+            formatDateHeader(dateStr) {
+                const d = new Date(dateStr + 'T12:00:00');
+                const today = new Date(); today.setHours(12,0,0,0);
+                const diff = Math.round((d - today) / 86400000);
+                const formatted = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+                if (diff === 0) return 'Today — ' + d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+                if (diff === 1) return 'Tomorrow — ' + d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+                if (diff === -1) return 'Yesterday — ' + d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+                return formatted;
+            },
+
+            formatTime(dateStr) {
+                return new Date(dateStr).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+            },
+
+            leagueColor(league) {
+                const c = { 'Premier League':'#3d195b', 'La Liga':'#ee8707', 'Serie A':'#024494', 'Bundesliga':'#d20515', 'Ligue 1':'#091c3e', 'Liga Portugal':'#00645a', 'Champions League':'#081c5a' };
+                return c[league] || '#007AFF';
+            },
+
+            aiGotExact(item) {
+                if (item.match.actual_home_goals === null) return false;
+                return item.prediction.predicted_home_goals === item.match.actual_home_goals
+                    && item.prediction.predicted_away_goals === item.match.actual_away_goals;
+            },
+
+            aiGotOutcome(item) {
+                if (item.match.actual_home_goals === null) return false;
+                const ao = Math.sign(item.match.actual_home_goals - item.match.actual_away_goals);
+                const po = Math.sign(item.prediction.predicted_home_goals - item.prediction.predicted_away_goals);
+                return ao === po;
+            },
+
+            confidenceColor(pct) {
+                // Smooth gradient: 30%=red → 40%=orange → 50%=amber → 60%=yellow-green → 80%+=green
+                if (pct == null) return '#6B7280';
+                const stops = [
+                    [30, [220,38,38]],   // #DC2626
+                    [40, [249,115,22]],  // #F97316
+                    [50, [234,179,8]],   // #EAB308
+                    [60, [132,204,22]],  // #84CC16
+                    [80, [22,163,74]],   // #16A34A
+                ];
+                if (pct <= stops[0][0]) return `rgb(${stops[0][1]})`;
+                if (pct >= stops[stops.length-1][0]) return `rgb(${stops[stops.length-1][1]})`;
+                for (let i = 0; i < stops.length - 1; i++) {
+                    if (pct >= stops[i][0] && pct <= stops[i+1][0]) {
+                        const t = (pct - stops[i][0]) / (stops[i+1][0] - stops[i][0]);
+                        const c = stops[i][1].map((v, j) => Math.round(v + t * (stops[i+1][1][j] - v)));
+                        return `rgb(${c})`;
+                    }
+                }
+                return '#6B7280';
+            },
+
+            confidenceText(pct) {
+                // Use dark text for lighter backgrounds (amber/yellow range ~45-58%)
+                if (pct != null && pct >= 45 && pct <= 58) return '#1D1D1F';
+                return '#FFFFFF';
+            },
+
+            getResultBorderClass(item) {
+                if (item.match.actual_home_goals === null) return '';
+                if (this.aiGotExact(item)) return 'border-l-[3px] !border-l-[#22C55E]';
+                if (this.aiGotOutcome(item)) return 'border-l-[3px] !border-l-[#F59E0B]';
+                return 'border-l-[3px] !border-l-[#EF4444]/40';
+            },
+
+            // ── History stats (computed from filteredMatches, reactive to filters) ──
+            _chartKey: 0,
+            _leagueChart: null,
+            _timeChart: null,
+            _lastHistoryJson: '',
+
+            get historyStats() {
+                const oc = (h, a) => h > a ? 'W' : (h < a ? 'L' : 'D');
+                const finished = this.filteredMatches.filter(m =>
+                    m.match.status === 'finished' && m.match.actual_home_goals !== null && m.prediction
+                );
+
+                let aiExact = 0, aiOutcome = 0, aiMaeH = 0, aiMaeA = 0;
+                let userExact = 0, userOutcome = 0, userMaeH = 0, userMaeA = 0, userCount = 0;
+                const leagueMap = {};
+                const dateMap = {};
+                const log = [];
+
+                for (const m of finished) {
+                    const p = m.prediction, mt = m.match;
+                    const actH = mt.actual_home_goals, actA = mt.actual_away_goals;
+                    const aiH = p.predicted_home_goals, aiA = p.predicted_away_goals;
+                    const key = this.getMatchKey(mt);
+
+                    const aiE = aiH === actH && aiA === actA;
+                    const aiO = oc(aiH, aiA) === oc(actH, actA);
+                    if (aiE) aiExact++;
+                    if (aiO) aiOutcome++;
+                    aiMaeH += Math.abs(aiH - actH);
+                    aiMaeA += Math.abs(aiA - actA);
+
+                    // User prediction
+                    const up = this.savedPredictions[key] ? this.userPredictions[key] : null;
+                    let userH = null, userA = null, userRes = null;
+                    if (up && up.home !== null && up.away !== null) {
+                        userH = +up.home; userA = +up.away;
+                        userCount++;
+                        const uE = userH === actH && userA === actA;
+                        const uO = oc(userH, userA) === oc(actH, actA);
+                        if (uE) userExact++;
+                        if (uO) userOutcome++;
+                        userMaeH += Math.abs(userH - actH);
+                        userMaeA += Math.abs(userA - actA);
+                        userRes = uE ? 'exact' : (uO ? 'close' : 'miss');
+                    }
+
+                    // League
+                    const lg = mt.league;
+                    if (!leagueMap[lg]) leagueMap[lg] = { m: 0, aiO: 0, uC: 0, uO: 0 };
+                    leagueMap[lg].m++;
+                    if (aiO) leagueMap[lg].aiO++;
+                    if (userRes) { leagueMap[lg].uC++; if (userRes !== 'miss') leagueMap[lg].uO++; }
+
+                    // Date
+                    const dt = new Date(mt.match_date).toISOString().slice(0, 10);
+                    if (!dateMap[dt]) dateMap[dt] = { total: 0, aiO: 0 };
+                    dateMap[dt].total++;
+                    if (aiO) dateMap[dt].aiO++;
+
+                    log.push({
+                        key: key, date: dt, home: mt.home_team, away: mt.away_team,
+                        aiH, aiA, userH, userA, actH, actA,
+                        aiRes: aiE ? 'exact' : (aiO ? 'close' : 'miss'), userRes
+                    });
+                }
+
+                const t = finished.length;
+                const byLeague = Object.entries(leagueMap).sort((a,b) => a[0].localeCompare(b[0])).map(([lg, d]) => ({
+                    league: lg, matches: d.m,
+                    aiRate: d.m ? d.aiO / d.m : 0,
+                    userRate: d.uC ? d.uO / d.uC : 0,
+                    userCount: d.uC,
+                }));
+
+                const dates = Object.keys(dateMap).sort();
+                let cumT = 0, cumO = 0;
+                const byDate = dates.map(dt => {
+                    cumT += dateMap[dt].total; cumO += dateMap[dt].aiO;
+                    return { date: dt, total: dateMap[dt].total, aiO: dateMap[dt].aiO, cumRate: cumT ? cumO/cumT*100 : 0 };
+                });
+
+                // Insights
+                const insights = [];
+                if (t > 0) {
+                    const avgActual = finished.reduce((s, m) => s + m.match.actual_home_goals + m.match.actual_away_goals, 0) / t;
+                    const avgAI = finished.reduce((s, m) => s + m.prediction.predicted_home_goals + m.prediction.predicted_away_goals, 0) / t;
+                    if (Math.abs(avgActual - avgAI) > 0.3) {
+                        const dir = avgAI < avgActual ? 'underestimates' : 'overestimates';
+                        insights.push(`Avg goals/match: ${avgActual.toFixed(1)} actual vs ${avgAI.toFixed(1)} AI — the model ${dir} scoring by ${Math.abs(avgActual - avgAI).toFixed(1)}.`);
+                    }
+                    if (userCount >= 3) {
+                        const aiR = t ? aiOutcome/t : 0, uR = userCount ? userOutcome/userCount : 0;
+                        if (uR > aiR) insights.push(`You outperform the AI (${(uR*100).toFixed(0)}% vs ${(aiR*100).toFixed(0)}% correct outcome).`);
+                        else if (aiR > uR) insights.push(`AI edges you (${(aiR*100).toFixed(0)}% vs ${(uR*100).toFixed(0)}% correct outcome).`);
+                    }
+                    const aiDraws = finished.filter(m => oc(m.prediction.predicted_home_goals, m.prediction.predicted_away_goals) === 'D').length;
+                    const actDraws = finished.filter(m => oc(m.match.actual_home_goals, m.match.actual_away_goals) === 'D').length;
+                    if (actDraws > aiDraws && actDraws >= 2) insights.push(`AI underestimates draws (${aiDraws} predicted vs ${actDraws} actual).`);
+                    if (byLeague.length >= 2) {
+                        const sorted = [...byLeague].filter(l => l.matches >= 2).sort((a,b) => a.aiRate - b.aiRate);
+                        if (sorted.length >= 2 && sorted[sorted.length-1].aiRate > sorted[0].aiRate + 0.1)
+                            insights.push(`AI strongest in ${sorted[sorted.length-1].league} (${(sorted[sorted.length-1].aiRate*100).toFixed(0)}%), weakest in ${sorted[0].league} (${(sorted[0].aiRate*100).toFixed(0)}%).`);
+                    }
+                } else {
+                    insights.push('No finished matches to analyze. Hit Refresh to load data.');
+                }
+
+                log.sort((a, b) => b.date.localeCompare(a.date));
+
+                return {
+                    total: t,
+                    aiExactRate: t ? aiExact / t : 0,
+                    aiOutcomeRate: t ? aiOutcome / t : 0,
+                    aiMae: t ? (aiMaeH + aiMaeA) / (2 * t) : 0,
+                    userCount,
+                    userExactRate: userCount ? userExact / userCount : 0,
+                    userOutcomeRate: userCount ? userOutcome / userCount : 0,
+                    userMae: userCount ? (userMaeH + userMaeA) / (2 * userCount) : 0,
+                    byLeague, byDate, log, insights,
+                };
+            },
+
+            renderHistoryCharts() {
+                const s = this.historyStats;
+                const json = JSON.stringify({ bl: s.byLeague.length, bd: s.byDate.length, t: s.total });
+                if (json === this._lastHistoryJson) return;
+                this._lastHistoryJson = json;
+
+                this.$nextTick(() => {
+                    const isDark = document.documentElement.classList.contains('dark');
+                    const grid = isDark ? 'rgba(255,255,255,0.04)' : '#F5F5F7';
+                    const text = isDark ? '#86868B' : '#6E6E73';
+                    const legendOpts = { position: 'top', align: 'end', labels: { font: { size: 10, family: 'Inter' }, color: text, usePointStyle: true, pointStyle: 'circle', padding: 12, boxWidth: 6 } };
+                    const yOpts = { beginAtZero: true, max: 100, grid: { color: grid, drawBorder: false }, ticks: { color: text, font: { size: 9 }, callback: v => v + '%', stepSize: 25 }, border: { display: false } };
+                    const xOpts = { grid: { display: false }, ticks: { color: text, font: { size: 9 } }, border: { display: false } };
+
+                    // League bar chart
+                    const lc = document.querySelector(`[id^="leagueChart-"]`);
+                    if (lc) {
+                        if (this._leagueChart) this._leagueChart.destroy();
+                        this._leagueChart = new Chart(lc, {
+                            type: 'bar',
+                            data: {
+                                labels: s.byLeague.map(l => l.league.replace('Premier League','PL').replace('Champions League','UCL').replace('Liga Portugal','Portugal')),
+                                datasets: [
+                                    { label: 'AI', data: s.byLeague.map(l => +(l.aiRate * 100).toFixed(1)), backgroundColor: 'rgba(0,122,255,0.6)', borderRadius: 5, barPercentage: 0.65 },
+                                    { label: 'You', data: s.byLeague.map(l => l.userCount > 0 ? +(l.userRate * 100).toFixed(1) : 0), backgroundColor: '#A2845E', borderRadius: 5, barPercentage: 0.65 },
+                                ],
+                            },
+                            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: legendOpts }, scales: { y: yOpts, x: xOpts } },
+                        });
+                    }
+
+                    // Time line chart
+                    const tc = document.querySelector(`[id^="timeChart-"]`);
+                    if (tc) {
+                        if (this._timeChart) this._timeChart.destroy();
+
+                        // User cumulative
+                        const uByDate = {};
+                        for (const row of s.log) {
+                            if (row.userRes) {
+                                if (!uByDate[row.date]) uByDate[row.date] = { t: 0, c: 0 };
+                                uByDate[row.date].t++;
+                                if (row.userRes !== 'miss') uByDate[row.date].c++;
+                            }
+                        }
+                        let uT = 0, uC = 0;
+                        const userCum = s.byDate.map(d => {
+                            const ud = uByDate[d.date]; if (ud) { uT += ud.t; uC += ud.c; }
+                            return uT > 0 ? +(uC/uT*100).toFixed(1) : null;
+                        });
+
+                        this._timeChart = new Chart(tc, {
+                            type: 'line',
+                            data: {
+                                labels: s.byDate.map(d => d.date.slice(5)),
+                                datasets: [
+                                    { label: 'AI', data: s.byDate.map(d => +d.cumRate.toFixed(1)), borderColor: 'rgba(0,122,255,0.7)', backgroundColor: 'rgba(0,122,255,0.04)', fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: 'rgba(0,122,255,0.7)', borderWidth: 2 },
+                                    { label: 'You', data: userCum, borderColor: '#A2845E', backgroundColor: 'rgba(162,132,94,0.04)', fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: '#A2845E', borderWidth: 2, spanGaps: true },
+                                ],
+                            },
+                            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: legendOpts }, scales: { y: yOpts, x: xOpts } },
+                        });
+                    }
+                });
+            },
+        }
+    }
+    </script>
+</body>
+</html>
