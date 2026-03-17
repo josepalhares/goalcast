@@ -1,5 +1,6 @@
 """FastAPI application entry point for GoalCast."""
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -7,7 +8,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not required in production
 
 from api.routes import router
 from db import init_db
@@ -19,10 +25,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-# Load environment variables
-load_dotenv()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -69,5 +71,6 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info("Starting uvicorn server on http://localhost:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    logger.info(f"Starting uvicorn server on http://localhost:{port}")
+    uvicorn.run(app, host="0.0.0.0", port=port)

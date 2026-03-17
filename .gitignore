@@ -2,3 +2,7 @@
 __pycache__/
 data/
 *.db
+.DS_Store
+*.pyc
+venv/
+.venv/
