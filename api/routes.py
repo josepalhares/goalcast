@@ -475,4 +475,10 @@ def _generate_insights(finished, user_preds, ai_stats, user_stats, league_map):
 
 @router.get("/health")
 async def health_check() -> dict:
-    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "matches_in_db": get_match_count()}
+    import os
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "matches_in_db": get_match_count(),
+        "api_key_set": bool(os.environ.get("API_FOOTBALL_KEY")),
+    }
