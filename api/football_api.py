@@ -93,11 +93,19 @@ async def _fetch_fixtures_by_date(
             return []  # Don't cache errors — allow retry
 
 
+# Statuses that mean "match is finished"
+_FINISHED_STATUSES = {"FT", "AET", "PEN", "WO"}
+
+
 def _filter(fixtures: List[Dict], status: str) -> List[Dict]:
     return [
         f for f in fixtures
         if f["league"]["id"] in TARGET_LEAGUE_IDS
-        and f["fixture"]["status"]["short"] == status
+        and (
+            f["fixture"]["status"]["short"] == status
+            if status == "NS"
+            else f["fixture"]["status"]["short"] in _FINISHED_STATUSES
+        )
     ]
 
 

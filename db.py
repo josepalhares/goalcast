@@ -1,4 +1,5 @@
 """SQLite database setup and helpers."""
+import json
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -168,6 +169,102 @@ def get_match_count() -> int:
     with get_db() as conn:
         row = conn.execute("SELECT COUNT(*) as cnt FROM matches").fetchone()
         return row["cnt"]
+
+
+SEED_PATH = Path(__file__).parent / "data" / "seed.json"
+
+
+def load_seed_if_empty() -> int:
+    """If DB has 0 matches, load from seed.json. Returns number of matches loaded."""
+    if get_match_count() > 0:
+        return 0
+
+    if not SEED_PATH.exists():
+        logger.info("No seed.json found, starting with empty DB")
+        return 0
+
+    logger.info(f"DB is empty — loading seed from {SEED_PATH}")
+    try:
+        seed = json.loads(SEED_PATH.read_text())
+    except Exception as e:
+        logger.error(f"Failed to read seed.json: {e}")
+        return 0
+
+    loaded = 0
+    with get_db() as conn:
+        cursor = conn.cursor()
+        for m in seed.get("matches", []):
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO matches
+                        (api_match_id, league, home_team, away_team, match_date,
+                         home_elo, away_elo, status, actual_home_goals, actual_away_goals)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (m["api_match_id"], m["league"], m["home_team"], m["away_team"],
+                      m["match_date"], m["home_elo"], m["away_elo"], m["status"],
+                      m.get("actual_home_goals"), m.get("actual_away_goals")))
+                if cursor.rowcount > 0:
+                    loaded += 1
+                    # Load prediction if present
+                    p = m.get("prediction")
+                    if p:
+                        match_id = cursor.execute(
+                            "SELECT id FROM matches WHERE api_match_id = ?",
+                            (m["api_match_id"],)
+                        ).fetchone()["id"]
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO predictions
+                                (match_id, source, predicted_home_goals, predicted_away_goals,
+                                 home_win_prob, draw_prob, away_win_prob, confidence)
+                            VALUES (?, 'ai', ?, ?, ?, ?, ?, ?)
+                        """, (match_id, p["predicted_home_goals"], p["predicted_away_goals"],
+                              p["home_win_prob"], p["draw_prob"], p["away_win_prob"],
+                              p.get("confidence", "medium")))
+            except Exception as e:
+                logger.error(f"Seed import error for {m.get('api_match_id')}: {e}")
+        conn.commit()
+
+    logger.info(f"Loaded {loaded} matches from seed.json")
+    return loaded
+
+
+def export_db_to_dict() -> dict:
+    """Export all matches + predictions as a JSON-serializable dict."""
+    rows = get_all_matches_from_db()
+    matches = []
+    for r in rows:
+        m = {
+            "api_match_id": r["api_match_id"],
+            "league": r["league"],
+            "home_team": r["home_team"],
+            "away_team": r["away_team"],
+            "match_date": r["match_date"],
+            "home_elo": r["home_elo"],
+            "away_elo": r["away_elo"],
+            "status": r["status"],
+            "actual_home_goals": r["actual_home_goals"],
+            "actual_away_goals": r["actual_away_goals"],
+        }
+        if r.get("predicted_home_goals") is not None:
+            m["prediction"] = {
+                "predicted_home_goals": r["predicted_home_goals"],
+                "predicted_away_goals": r["predicted_away_goals"],
+                "home_win_prob": r["home_win_prob"],
+                "draw_prob": r["draw_prob"],
+                "away_win_prob": r["away_win_prob"],
+                "confidence": r.get("confidence"),
+            }
+        matches.append(m)
+    return {"matches": matches, "exported_at": get_last_refresh() or "unknown"}
+
+
+def save_seed_file() -> str:
+    """Export DB and write to seed.json. Returns path."""
+    data = export_db_to_dict()
+    SEED_PATH.parent.mkdir(exist_ok=True)
+    SEED_PATH.write_text(json.dumps(data, indent=2))
+    logger.info(f"Saved {len(data['matches'])} matches to {SEED_PATH}")
+    return str(SEED_PATH)
 
 
 def get_last_refresh() -> Optional[str]:

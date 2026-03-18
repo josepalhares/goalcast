@@ -17,7 +17,7 @@ except ImportError:
     pass  # python-dotenv not required in production
 
 from api.routes import router, do_refresh
-from db import init_db
+from db import init_db, load_seed_if_empty
 
 # Configure logging
 logging.basicConfig(
@@ -47,7 +47,11 @@ async def lifespan(app: FastAPI):
     """Lifecycle events for FastAPI app."""
     logger.info("Starting GoalCast application")
     init_db()
-    logger.info("Database initialized")
+    loaded = load_seed_if_empty()
+    if loaded:
+        logger.info(f"Seeded DB with {loaded} matches from seed.json")
+    else:
+        logger.info("Database initialized")
 
     # Run startup refresh in background (don't block server startup)
     async def _startup_refresh():

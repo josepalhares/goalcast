@@ -8,7 +8,7 @@ from models import Match, Prediction, MatchWithPrediction
 from api.club_elo import fetch_elo_ratings
 from api.football_api import fetch_upcoming_fixtures, fetch_recent_results, LEAGUE_NAMES, get_request_count
 from prediction.engine import generate_prediction
-from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count, get_last_refresh, set_last_refresh
+from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count, get_last_refresh, set_last_refresh, export_db_to_dict, save_seed_file
 
 logger = logging.getLogger(__name__)
 
@@ -319,6 +319,20 @@ async def refresh_if_stale() -> dict:
         except Exception:
             pass
     return await do_refresh(source="auto-stale")
+
+
+@router.get("/export")
+async def export_data() -> dict:
+    """Export all matches + predictions as JSON (for seed file backup)."""
+    return export_db_to_dict()
+
+
+@router.post("/export")
+async def save_export() -> dict:
+    """Save current DB state to data/seed.json."""
+    path = save_seed_file()
+    count = get_match_count()
+    return {"saved": path, "matches": count}
 
 
 @router.post("/predictions")
