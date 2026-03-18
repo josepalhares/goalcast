@@ -526,7 +526,7 @@
                     if (!r.ok) throw new Error('Failed to fetch matches');
                     this.allMatches = await r.json();
 
-                    // If DB is empty, auto-trigger a refresh
+                    // If DB is empty, wait for startup refresh then reload
                     if (this.allMatches.length === 0) {
                         this.showToast('First load — fetching match data...');
                         await this.doRefresh();
@@ -535,6 +535,21 @@
 
                     this._initUserPredictions();
                     this._scrollToToday();
+
+                    // Auto-refresh in background if data is stale (>2h)
+                    fetch('/api/refresh-if-stale', { method: 'POST' }).then(async res => {
+                        if (!res.ok) return;
+                        const data = await res.json();
+                        if (!data.skipped && data.added > 0) {
+                            // Reload matches from DB with new data
+                            const r2 = await fetch('/api/matches');
+                            if (r2.ok) {
+                                this.allMatches = await r2.json();
+                                this._initUserPredictions();
+                                this.showToast(`Auto-refreshed: +${data.added} new matches`);
+                            }
+                        }
+                    }).catch(() => {});
                 } catch (err) {
                     this.error = err.message;
                 } finally {

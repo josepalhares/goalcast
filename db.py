@@ -60,6 +60,13 @@ def init_db() -> None:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+
         conn.commit()
 
     # Add confidence column if missing (migration for existing DBs)
@@ -161,3 +168,21 @@ def get_match_count() -> int:
     with get_db() as conn:
         row = conn.execute("SELECT COUNT(*) as cnt FROM matches").fetchone()
         return row["cnt"]
+
+
+def get_last_refresh() -> Optional[str]:
+    """Get the last refresh timestamp (ISO format string or None)."""
+    with get_db() as conn:
+        row = conn.execute("SELECT value FROM app_state WHERE key = 'last_refresh'").fetchone()
+        return row["value"] if row else None
+
+
+def set_last_refresh(timestamp: str) -> None:
+    """Store the last refresh timestamp."""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO app_state (key, value) VALUES ('last_refresh', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (timestamp,)
+        )
+        conn.commit()

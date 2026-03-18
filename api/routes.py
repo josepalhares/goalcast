@@ -8,7 +8,7 @@ from models import Match, Prediction, MatchWithPrediction
 from api.club_elo import fetch_elo_ratings
 from api.football_api import fetch_upcoming_fixtures, fetch_recent_results, LEAGUE_NAMES, get_request_count
 from prediction.engine import generate_prediction
-from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count
+from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count, get_last_refresh, set_last_refresh
 
 logger = logging.getLogger(__name__)
 
@@ -177,10 +177,9 @@ async def get_matches(status: Optional[str] = None, days_back: Optional[int] = N
     return results
 
 
-@router.post("/refresh")
-async def refresh_data() -> dict:
-    """Fetch fresh data from API-Football, save to DB, return summary."""
-    logger.info("=== REFRESH: Fetching from API-Football ===")
+async def do_refresh(source: str = "manual") -> dict:
+    """Core refresh logic — reusable by endpoint, background task, and auto-refresh."""
+    logger.info(f"=== REFRESH ({source}): Fetching from API-Football ===")
 
     elo_ratings = await _ensure_elo_cache()
     before = get_request_count()
@@ -209,7 +208,6 @@ async def refresh_data() -> dict:
             if home_elo is None or away_elo is None:
                 continue
 
-            # Check if match already exists
             existing = None
             with get_db() as conn:
                 existing = conn.execute(
@@ -239,7 +237,6 @@ async def refresh_data() -> dict:
             else:
                 added += 1
 
-            # Generate and save AI prediction (only if none exists)
             pred = generate_prediction(
                 parsed["home_team"], parsed["away_team"], home_elo, away_elo
             )
@@ -257,8 +254,10 @@ async def refresh_data() -> dict:
             logger.error(f"Error processing fixture: {e}")
 
     total_in_db = get_match_count()
+    set_last_refresh(datetime.utcnow().isoformat())
+
     logger.info(
-        f"Refresh done: +{added} new, {updated} updated, "
+        f"Refresh ({source}) done: +{added} new, {updated} updated, "
         f"{total_in_db} total in DB, {api_calls} API calls"
     )
 
@@ -268,6 +267,28 @@ async def refresh_data() -> dict:
         "total_in_db": total_in_db,
         "api_calls_used": api_calls,
     }
+
+
+@router.post("/refresh")
+async def refresh_data() -> dict:
+    """Manual refresh triggered by Refresh button."""
+    return await do_refresh(source="manual")
+
+
+@router.post("/refresh-if-stale")
+async def refresh_if_stale() -> dict:
+    """Auto-refresh on page load if last refresh was more than 2 hours ago."""
+    last = get_last_refresh()
+    if last:
+        from datetime import datetime as dt
+        try:
+            last_dt = dt.fromisoformat(last)
+            age_hours = (dt.utcnow() - last_dt).total_seconds() / 3600
+            if age_hours < 2:
+                return {"skipped": True, "age_hours": round(age_hours, 1), "total_in_db": get_match_count()}
+        except Exception:
+            pass
+    return await do_refresh(source="auto-stale")
 
 
 @router.post("/predictions")
@@ -480,5 +501,6 @@ async def health_check() -> dict:
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "matches_in_db": get_match_count(),
+        "last_refresh": get_last_refresh(),
         "api_key_set": bool(os.environ.get("API_FOOTBALL_KEY")),
     }
