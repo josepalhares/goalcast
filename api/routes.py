@@ -178,8 +178,12 @@ async def get_matches(status: Optional[str] = None, days_back: Optional[int] = N
 
 
 async def do_refresh(source: str = "manual") -> dict:
-    """Core refresh logic — reusable by endpoint, background task, and auto-refresh."""
-    logger.info(f"=== REFRESH ({source}): Fetching from API-Football ===")
+    """Core refresh logic — reusable by endpoint, background task, and auto-refresh.
+
+    Startup refreshes go back 30 days for maximum history recovery.
+    Manual/scheduled refreshes go back 14 days to conserve API calls.
+    """
+    logger.info(f"=== REFRESH ({source}): upcoming=14d, recent=14d ===")
 
     elo_ratings = await _ensure_elo_cache()
     before = get_request_count()
@@ -189,9 +193,23 @@ async def do_refresh(source: str = "manual") -> dict:
 
     after = get_request_count()
     api_calls = after - before
+    logger.info(f"API calls this refresh: {api_calls} (session total: {after})")
+
+    # Log what we got per league
+    league_counts = {}
+    for f in upcoming_fixtures + recent_fixtures:
+        lg = LEAGUE_NAMES.get(f["league"]["id"], "?")
+        league_counts[lg] = league_counts.get(lg, 0) + 1
+    for lg_name in LEAGUE_NAMES.values():
+        count = league_counts.get(lg_name, 0)
+        if count == 0:
+            logger.warning(f"No fixtures found for {lg_name} — API may have limited data for this period")
+        else:
+            logger.info(f"  {lg_name}: {count} fixtures fetched")
 
     added = 0
     updated = 0
+    skipped_no_elo = 0
 
     all_fixtures = [
         (f, "upcoming") for f in upcoming_fixtures
@@ -206,6 +224,7 @@ async def do_refresh(source: str = "manual") -> dict:
             away_elo = _find_elo(parsed["away_team"], elo_ratings)
 
             if home_elo is None or away_elo is None:
+                skipped_no_elo += 1
                 continue
 
             existing = None
@@ -256,9 +275,20 @@ async def do_refresh(source: str = "manual") -> dict:
     total_in_db = get_match_count()
     set_last_refresh(datetime.utcnow().isoformat())
 
+    # Log DB totals per league
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT league, COUNT(*) as cnt, "
+            "SUM(CASE WHEN status='finished' THEN 1 ELSE 0 END) as finished "
+            "FROM matches GROUP BY league ORDER BY league"
+        ).fetchall()
+        logger.info(f"DB totals after refresh ({total_in_db} matches):")
+        for r in rows:
+            logger.info(f"  {r['league']}: {r['cnt']} total ({r['finished']} finished)")
+
     logger.info(
         f"Refresh ({source}) done: +{added} new, {updated} updated, "
-        f"{total_in_db} total in DB, {api_calls} API calls"
+        f"{skipped_no_elo} skipped (no Elo), {total_in_db} total in DB, {api_calls} API calls"
     )
 
     return {

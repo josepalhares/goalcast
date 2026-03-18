@@ -102,22 +102,34 @@ def _filter(fixtures: List[Dict], status: str) -> List[Dict]:
 
 
 async def _fetch_date_range(dates: List[str], status: str) -> List[Dict]:
-    """Fetch fixtures for a list of dates, filter by status, return combined results."""
+    """Fetch fixtures for dates, stop early after 3 consecutive empty days to save API calls."""
     api_key = get_api_key()
     headers = {"x-apisports-key": api_key}
 
     before = _api_request_count
     results: list[Dict] = []
+    consecutive_empty = 0
+    days_fetched = 0
 
     async with httpx.AsyncClient(timeout=20.0) as client:
-        tasks = [_fetch_fixtures_by_date(client, d, headers) for d in dates]
-        all_days = await asyncio.gather(*tasks)
-        for day_fixtures in all_days:
-            results.extend(_filter(day_fixtures, status))
+        # Fetch in small batches of 2 (semaphore limited) to allow early stop
+        for date in dates:
+            day_fixtures = await _fetch_fixtures_by_date(client, date, headers)
+            days_fetched += 1
+            filtered = _filter(day_fixtures, status)
+            results.extend(filtered)
+
+            if len(day_fixtures) == 0:
+                consecutive_empty += 1
+                if consecutive_empty >= 3:
+                    logger.info(f"Stopping early after 3 consecutive empty days (last: {date})")
+                    break
+            else:
+                consecutive_empty = 0
 
     calls = _api_request_count - before
     logger.info(
-        f"Fetched {len(results)} {status} fixtures across {len(dates)} days "
+        f"Fetched {len(results)} {status} fixtures across {days_fetched}/{len(dates)} days "
         f"({calls} new API calls, {_api_request_count} total session)"
     )
     return results
