@@ -1,165 +1,165 @@
 {
-  "matches": [
-    {
-      "api_match_id": "1528333",
-      "league": "Champions League",
-      "home_team": "Sporting CP",
-      "away_team": "Bodo/Glimt",
-      "match_date": "2026-03-17T17:45:00+00:00",
-      "home_elo": 1861.45532227,
-      "away_elo": 1726.39953613,
-      "status": "finished",
-      "actual_home_goals": 5,
-      "actual_away_goals": 0,
-      "prediction": {
-        "predicted_home_goals": 2,
-        "predicted_away_goals": 0,
-        "home_win_prob": 0.601,
-        "draw_prob": 0.221,
-        "away_win_prob": 0.174,
-        "confidence": "medium"
-      }
-    },
-    {
-      "api_match_id": "1528326",
-      "league": "Champions League",
-      "home_team": "Manchester City",
-      "away_team": "Real Madrid",
-      "match_date": "2026-03-17T20:00:00+00:00",
-      "home_elo": 1937.73010254,
-      "away_elo": 1943.73181152,
-      "status": "finished",
-      "actual_home_goals": 1,
-      "actual_away_goals": 2,
-      "prediction": {
-        "predicted_home_goals": 2,
-        "predicted_away_goals": 1,
-        "home_win_prob": 0.485,
-        "draw_prob": 0.253,
-        "away_win_prob": 0.26,
-        "confidence": "low"
-      }
-    },
-    {
-      "api_match_id": "1528328",
-      "league": "Champions League",
-      "home_team": "Chelsea",
-      "away_team": "Paris Saint Germain",
-      "match_date": "2026-03-17T20:00:00+00:00",
-      "home_elo": 1881.42895508,
-      "away_elo": 1955.02185059,
-      "status": "finished",
-      "actual_home_goals": 0,
-      "actual_away_goals": 3,
-      "prediction": {
-        "predicted_home_goals": 1,
-        "predicted_away_goals": 1,
-        "home_win_prob": 0.432,
-        "draw_prob": 0.262,
-        "away_win_prob": 0.306,
-        "confidence": "low"
-      }
-    },
-    {
-      "api_match_id": "1528330",
-      "league": "Champions League",
-      "home_team": "Arsenal",
-      "away_team": "Bayer Leverkusen",
-      "match_date": "2026-03-17T20:00:00+00:00",
-      "home_elo": 2057.37646484,
-      "away_elo": 1805.75524902,
-      "status": "finished",
-      "actual_home_goals": 2,
-      "actual_away_goals": 0,
-      "prediction": {
-        "predicted_home_goals": 2,
-        "predicted_away_goals": 0,
-        "home_win_prob": 0.688,
-        "draw_prob": 0.186,
-        "away_win_prob": 0.119,
-        "confidence": "high"
-      }
-    },
-    {
-      "api_match_id": "1528327",
-      "league": "Champions League",
-      "home_team": "Barcelona",
-      "away_team": "Newcastle",
-      "match_date": "2026-03-18T17:45:00+00:00",
-      "home_elo": 1956.66345215,
-      "away_elo": 1862.05993652,
-      "status": "upcoming",
-      "actual_home_goals": null,
-      "actual_away_goals": null,
-      "prediction": {
-        "predicted_home_goals": 2,
-        "predicted_away_goals": 0,
-        "home_win_prob": 0.567,
-        "draw_prob": 0.233,
-        "away_win_prob": 0.198,
-        "confidence": "medium"
-      }
-    },
-    {
-      "api_match_id": "1528329",
-      "league": "Champions League",
-      "home_team": "Liverpool",
-      "away_team": "Galatasaray",
-      "match_date": "2026-03-18T20:00:00+00:00",
-      "home_elo": 1924.0255127,
-      "away_elo": 1735.46252441,
-      "status": "upcoming",
-      "actual_home_goals": null,
-      "actual_away_goals": null,
-      "prediction": {
-        "predicted_home_goals": 2,
-        "predicted_away_goals": 0,
-        "home_win_prob": 0.642,
-        "draw_prob": 0.206,
-        "away_win_prob": 0.147,
-        "confidence": "medium"
-      }
-    },
-    {
-      "api_match_id": "1528331",
-      "league": "Champions League",
-      "home_team": "Tottenham",
-      "away_team": "Atletico Madrid",
-      "match_date": "2026-03-18T20:00:00+00:00",
-      "home_elo": 1766.06201172,
-      "away_elo": 1861.38696289,
-      "status": "upcoming",
-      "actual_home_goals": null,
-      "actual_away_goals": null,
-      "prediction": {
-        "predicted_home_goals": 1,
-        "predicted_away_goals": 1,
-        "home_win_prob": 0.415,
-        "draw_prob": 0.262,
-        "away_win_prob": 0.322,
-        "confidence": "low"
-      }
-    },
-    {
-      "api_match_id": "1528332",
-      "league": "Champions League",
-      "home_team": "Bayern M\u00fcnchen",
-      "away_team": "Atalanta",
-      "match_date": "2026-03-18T20:00:00+00:00",
-      "home_elo": 1986.94702148,
-      "away_elo": 1791.96899414,
-      "status": "upcoming",
-      "actual_home_goals": null,
-      "actual_away_goals": null,
-      "prediction": {
-        "predicted_home_goals": 2,
-        "predicted_away_goals": 0,
-        "home_win_prob": 0.646,
-        "draw_prob": 0.204,
-        "away_win_prob": 0.145,
-        "confidence": "medium"
-      }
-    }
-  ],
-  "exported_at": "2026-03-18T13:42:13.896553"
+    "matches": [
+        {
+            "api_match_id": "1528333",
+            "league": "Champions League",
+            "home_team": "Sporting CP",
+            "away_team": "Bodo/Glimt",
+            "match_date": "2026-03-17T17:45:00+00:00",
+            "home_elo": 1861.45532227,
+            "away_elo": 1726.39953613,
+            "status": "finished",
+            "actual_home_goals": 5,
+            "actual_away_goals": 0,
+            "prediction": {
+                "predicted_home_goals": 2,
+                "predicted_away_goals": 0,
+                "home_win_prob": 0.601,
+                "draw_prob": 0.221,
+                "away_win_prob": 0.174,
+                "confidence": "medium"
+            }
+        },
+        {
+            "api_match_id": "1528326",
+            "league": "Champions League",
+            "home_team": "Manchester City",
+            "away_team": "Real Madrid",
+            "match_date": "2026-03-17T20:00:00+00:00",
+            "home_elo": 1937.73010254,
+            "away_elo": 1943.73181152,
+            "status": "finished",
+            "actual_home_goals": 1,
+            "actual_away_goals": 2,
+            "prediction": {
+                "predicted_home_goals": 2,
+                "predicted_away_goals": 1,
+                "home_win_prob": 0.485,
+                "draw_prob": 0.253,
+                "away_win_prob": 0.26,
+                "confidence": "low"
+            }
+        },
+        {
+            "api_match_id": "1528328",
+            "league": "Champions League",
+            "home_team": "Chelsea",
+            "away_team": "Paris Saint Germain",
+            "match_date": "2026-03-17T20:00:00+00:00",
+            "home_elo": 1881.42895508,
+            "away_elo": 1955.02185059,
+            "status": "finished",
+            "actual_home_goals": 0,
+            "actual_away_goals": 3,
+            "prediction": {
+                "predicted_home_goals": 1,
+                "predicted_away_goals": 1,
+                "home_win_prob": 0.432,
+                "draw_prob": 0.262,
+                "away_win_prob": 0.306,
+                "confidence": "low"
+            }
+        },
+        {
+            "api_match_id": "1528330",
+            "league": "Champions League",
+            "home_team": "Arsenal",
+            "away_team": "Bayer Leverkusen",
+            "match_date": "2026-03-17T20:00:00+00:00",
+            "home_elo": 2057.37646484,
+            "away_elo": 1805.75524902,
+            "status": "finished",
+            "actual_home_goals": 2,
+            "actual_away_goals": 0,
+            "prediction": {
+                "predicted_home_goals": 2,
+                "predicted_away_goals": 0,
+                "home_win_prob": 0.688,
+                "draw_prob": 0.186,
+                "away_win_prob": 0.119,
+                "confidence": "high"
+            }
+        },
+        {
+            "api_match_id": "1528327",
+            "league": "Champions League",
+            "home_team": "Barcelona",
+            "away_team": "Newcastle",
+            "match_date": "2026-03-18T17:45:00+00:00",
+            "home_elo": 1956.66345215,
+            "away_elo": 1862.05993652,
+            "status": "upcoming",
+            "actual_home_goals": null,
+            "actual_away_goals": null,
+            "prediction": {
+                "predicted_home_goals": 2,
+                "predicted_away_goals": 0,
+                "home_win_prob": 0.567,
+                "draw_prob": 0.233,
+                "away_win_prob": 0.198,
+                "confidence": "medium"
+            }
+        },
+        {
+            "api_match_id": "1528329",
+            "league": "Champions League",
+            "home_team": "Liverpool",
+            "away_team": "Galatasaray",
+            "match_date": "2026-03-18T20:00:00+00:00",
+            "home_elo": 1924.0255127,
+            "away_elo": 1735.46252441,
+            "status": "upcoming",
+            "actual_home_goals": null,
+            "actual_away_goals": null,
+            "prediction": {
+                "predicted_home_goals": 2,
+                "predicted_away_goals": 0,
+                "home_win_prob": 0.642,
+                "draw_prob": 0.206,
+                "away_win_prob": 0.147,
+                "confidence": "medium"
+            }
+        },
+        {
+            "api_match_id": "1528331",
+            "league": "Champions League",
+            "home_team": "Tottenham",
+            "away_team": "Atletico Madrid",
+            "match_date": "2026-03-18T20:00:00+00:00",
+            "home_elo": 1766.06201172,
+            "away_elo": 1861.38696289,
+            "status": "upcoming",
+            "actual_home_goals": null,
+            "actual_away_goals": null,
+            "prediction": {
+                "predicted_home_goals": 1,
+                "predicted_away_goals": 1,
+                "home_win_prob": 0.415,
+                "draw_prob": 0.262,
+                "away_win_prob": 0.322,
+                "confidence": "low"
+            }
+        },
+        {
+            "api_match_id": "1528332",
+            "league": "Champions League",
+            "home_team": "Bayern M\u00fcnchen",
+            "away_team": "Atalanta",
+            "match_date": "2026-03-18T20:00:00+00:00",
+            "home_elo": 1986.94702148,
+            "away_elo": 1791.96899414,
+            "status": "upcoming",
+            "actual_home_goals": null,
+            "actual_away_goals": null,
+            "prediction": {
+                "predicted_home_goals": 2,
+                "predicted_away_goals": 0,
+                "home_win_prob": 0.646,
+                "draw_prob": 0.204,
+                "away_win_prob": 0.145,
+                "confidence": "medium"
+            }
+        }
+    ],
+    "exported_at": "2026-03-18T13:47:15.029115"
 }
