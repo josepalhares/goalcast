@@ -291,6 +291,12 @@ async def do_refresh(source: str = "manual") -> dict:
         f"{skipped_no_elo} skipped (no Elo), {total_in_db} total in DB, {api_calls} API calls"
     )
 
+    # Auto-export seed after every refresh
+    try:
+        save_seed_file()
+    except Exception as e:
+        logger.error(f"Failed to auto-export seed: {e}")
+
     return {
         "added": added,
         "updated": updated,

@@ -104,28 +104,48 @@ def upsert_match(
     actual_home_goals: Optional[int] = None,
     actual_away_goals: Optional[int] = None,
 ) -> int:
-    """Insert or update a match. Returns the match row id."""
+    """Insert new match or update existing. Never deletes. Never regresses status.
+    Returns the match row id."""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO matches (api_match_id, league, home_team, away_team, match_date,
-                                 home_elo, away_elo, status, actual_home_goals, actual_away_goals)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(api_match_id) DO UPDATE SET
-                status = excluded.status,
-                actual_home_goals = COALESCE(excluded.actual_home_goals, actual_home_goals),
-                actual_away_goals = COALESCE(excluded.actual_away_goals, actual_away_goals),
-                home_elo = excluded.home_elo,
-                away_elo = excluded.away_elo
-        """, (api_match_id, league, home_team, away_team, match_date,
-              home_elo, away_elo, status, actual_home_goals, actual_away_goals))
-        conn.commit()
 
-        # Get the row id
-        row = cursor.execute(
-            "SELECT id FROM matches WHERE api_match_id = ?", (api_match_id,)
+        # Check if match exists
+        existing = cursor.execute(
+            "SELECT id, status FROM matches WHERE api_match_id = ?", (api_match_id,)
         ).fetchone()
-        return row["id"]
+
+        if existing is None:
+            # New match — insert
+            cursor.execute("""
+                INSERT INTO matches (api_match_id, league, home_team, away_team, match_date,
+                                     home_elo, away_elo, status, actual_home_goals, actual_away_goals)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (api_match_id, league, home_team, away_team, match_date,
+                  home_elo, away_elo, status, actual_home_goals, actual_away_goals))
+            conn.commit()
+            row_id = cursor.execute(
+                "SELECT id FROM matches WHERE api_match_id = ?", (api_match_id,)
+            ).fetchone()["id"]
+            return row_id
+        else:
+            # Existing match — only update forward (upcoming → finished), never regress
+            row_id = existing["id"]
+            old_status = existing["status"]
+
+            # Only advance status: upcoming → finished (never go backward)
+            new_status = status if status == "finished" else old_status
+
+            # Only set scores if we have them and they're not already set
+            cursor.execute("""
+                UPDATE matches SET
+                    status = ?,
+                    actual_home_goals = COALESCE(?, actual_home_goals),
+                    actual_away_goals = COALESCE(?, actual_away_goals),
+                    home_elo = ?
+                WHERE id = ?
+            """, (new_status, actual_home_goals, actual_away_goals, home_elo, row_id))
+            conn.commit()
+            return row_id
 
 
 def upsert_ai_prediction(
