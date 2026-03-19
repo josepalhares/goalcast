@@ -6,7 +6,7 @@ import logging
 
 from models import Match, Prediction, MatchWithPrediction
 from api.club_elo import fetch_elo_ratings
-from api.football_api import fetch_upcoming_fixtures, fetch_recent_results, LEAGUE_NAMES, get_request_count
+from api.football_api import fetch_upcoming_fixtures, fetch_recent_results, LEAGUE_NAMES, get_request_count, clear_cache
 from prediction.engine import generate_prediction
 from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count, get_last_refresh, set_last_refresh, export_db_to_dict, save_seed_file
 
@@ -184,6 +184,13 @@ async def do_refresh(source: str = "manual") -> dict:
     Manual/scheduled refreshes go back 14 days to conserve API calls.
     """
     logger.info(f"=== REFRESH ({source}): upcoming=14d, recent=14d ===")
+
+    # Clear stale fixture cache so we get fresh API data
+    clear_cache()
+
+    # Clear Elo cache too so we get today's ratings
+    global _elo_cache
+    _elo_cache = {}
 
     elo_ratings = await _ensure_elo_cache()
     before = get_request_count()
