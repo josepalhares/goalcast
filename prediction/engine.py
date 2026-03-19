@@ -1,7 +1,7 @@
 """Poisson-based prediction engine for match score prediction."""
 import numpy as np
 from scipy.stats import poisson
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -11,20 +11,32 @@ BASE_HOME_GOALS = 1.45
 BASE_AWAY_GOALS = 1.15
 MAX_XG = 3.5
 
+# Calibration adjustments (loaded from DB after refresh)
+_calibration: Optional[dict] = None
+
+
+def set_calibration(cal: Optional[dict]) -> None:
+    """Set calibration adjustments from DB."""
+    global _calibration
+    _calibration = cal
+    if cal:
+        logger.info(
+            f"Calibration active ({cal['matches']} matches): "
+            f"home_bias={cal['home_bias']:+.2f}, away_bias={cal['away_bias']:+.2f}"
+        )
+
 
 def elo_to_expected_goals(home_elo: float, away_elo: float) -> Tuple[float, float]:
-    """Convert Elo ratings to expected goals.
-
-    Calibrated so that:
-    - ~400 point gap -> ~2-0 or 3-1
-    - ~200 point gap -> ~2-0 or 2-1
-    - Even teams -> ~2-1 or 1-0
-    - Home underdog -> ~1-1
-    """
+    """Convert Elo ratings to expected goals with calibration adjustments."""
     elo_diff = (home_elo - away_elo + HOME_ADVANTAGE) / 400
 
     home_xg = BASE_HOME_GOALS * (10 ** (elo_diff * 0.22))
     away_xg = BASE_AWAY_GOALS * (10 ** (-elo_diff * 0.22))
+
+    # Apply calibration bias if available (nudge xG toward actual averages)
+    if _calibration and _calibration.get("matches", 0) >= 10:
+        home_xg += _calibration["home_bias"] * 0.5  # Apply half the bias (conservative)
+        away_xg += _calibration["away_bias"] * 0.5
 
     home_xg = min(max(0.4, home_xg), MAX_XG)
     away_xg = min(max(0.3, away_xg), MAX_XG)
@@ -46,7 +58,6 @@ def predict_score_poisson(home_xg: float, away_xg: float, max_goals: int = 7) ->
     pred_h, pred_a = int(best_idx[0]), int(best_idx[1])
 
     # Use rounded xG when the expected value is clearly above the integer threshold
-    # This prevents the model from being stuck on 1-1 for moderate xG values
     rounded_h = round(home_xg)
     rounded_a = round(away_xg)
     if home_xg >= 1.45 and rounded_h > pred_h:
@@ -69,7 +80,7 @@ def predict_score_poisson(home_xg: float, away_xg: float, max_goals: int = 7) ->
             else:
                 away_win_prob += p
 
-    # Determine confidence based on the predicted outcome's probability
+    # Determine confidence
     if pred_h > pred_a:
         outcome_prob = home_win_prob
     elif pred_h < pred_a:
@@ -77,7 +88,6 @@ def predict_score_poisson(home_xg: float, away_xg: float, max_goals: int = 7) ->
     else:
         outcome_prob = draw_prob
 
-    # Draws are inherently uncertain — always amber
     if pred_h == pred_a:
         confidence = "low"
     elif outcome_prob > 0.65:

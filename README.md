@@ -38,6 +38,27 @@ python main.py
 3. Add environment variable: `API_FOOTBALL_KEY=your_key`
 4. Deploy — Railway reads the `Procfile` automatically
 
+### Keep data fresh (recommended)
+
+Railway's free tier sleeps containers after inactivity. To keep data updated, set up a free cron job:
+
+1. Go to [cron-job.org](https://cron-job.org) and create a free account
+2. Create a new cron job pointing to: `https://YOUR-APP.up.railway.app/api/cron-refresh`
+3. Set schedule to every 4 hours
+4. This wakes the container and triggers a data refresh if data is stale (>3 hours old)
+
+### Preserve history across redeploys
+
+Railway's free tier has an ephemeral filesystem — SQLite is wiped on redeploy. To preserve history:
+
+```bash
+# Export current DB to seed file
+curl -s https://YOUR-APP.up.railway.app/api/export > data/seed.json
+git add data/seed.json && git commit -m "update seed" && git push
+```
+
+The app automatically loads `data/seed.json` into the DB on startup if the DB is empty.
+
 ## Tech Stack
 
 - **Backend:** Python, FastAPI, SQLite, httpx

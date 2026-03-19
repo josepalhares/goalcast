@@ -7,8 +7,8 @@ import logging
 from models import Match, Prediction, MatchWithPrediction
 from api.club_elo import fetch_elo_ratings
 from api.football_api import fetch_upcoming_fixtures, fetch_recent_results, LEAGUE_NAMES, get_request_count, clear_cache
-from prediction.engine import generate_prediction
-from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count, get_last_refresh, set_last_refresh, export_db_to_dict, save_seed_file
+from prediction.engine import generate_prediction, set_calibration as set_engine_calibration
+from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count, get_last_refresh, set_last_refresh, export_db_to_dict, save_seed_file, calculate_calibration, get_calibration
 
 logger = logging.getLogger(__name__)
 
@@ -293,6 +293,12 @@ async def do_refresh(source: str = "manual") -> dict:
         for r in rows:
             logger.info(f"  {r['league']}: {r['cnt']} total ({r['finished']} finished)")
 
+    # Recalculate model calibration from all finished matches
+    cal = calculate_calibration()
+    if cal:
+        set_engine_calibration(cal)
+        logger.info(f"Model calibration: home_bias={cal['home_bias']:+.2f}, away_bias={cal['away_bias']:+.2f}")
+
     logger.info(
         f"Refresh ({source}) done: +{added} new, {updated} updated, "
         f"{skipped_no_elo} skipped (no Elo), {total_in_db} total in DB, {api_calls} API calls"
@@ -320,18 +326,47 @@ async def refresh_data() -> dict:
 
 @router.post("/refresh-if-stale")
 async def refresh_if_stale() -> dict:
-    """Auto-refresh on page load if last refresh was more than 2 hours ago."""
+    """Auto-refresh on page load if last refresh was more than 30 minutes ago."""
+    last = get_last_refresh()
+    if last:
+        from datetime import datetime as dt
+        try:
+            last_dt = dt.fromisoformat(last)
+            age_mins = (dt.utcnow() - last_dt).total_seconds() / 60
+            if age_mins < 30:
+                return {"skipped": True, "age_minutes": round(age_mins, 1), "total_in_db": get_match_count()}
+        except Exception:
+            pass
+    return await do_refresh(source="auto-stale")
+
+
+@router.get("/cron-refresh")
+async def cron_refresh() -> dict:
+    """External cron endpoint — triggers refresh if last was >3 hours ago.
+    Set up a free cron at https://cron-job.org to ping this every 4 hours.
+    """
+    import asyncio
     last = get_last_refresh()
     if last:
         from datetime import datetime as dt
         try:
             last_dt = dt.fromisoformat(last)
             age_hours = (dt.utcnow() - last_dt).total_seconds() / 3600
-            if age_hours < 2:
-                return {"skipped": True, "age_hours": round(age_hours, 1), "total_in_db": get_match_count()}
+            if age_hours < 3:
+                return {"skipped": True, "age_hours": round(age_hours, 1), "next_eligible_in": f"{3 - age_hours:.1f}h"}
         except Exception:
             pass
-    return await do_refresh(source="auto-stale")
+
+    # Fire refresh in background so the cron ping returns quickly
+    async def _bg():
+        try:
+            result = await do_refresh(source="cron")
+            logger.info(f"Cron refresh result: {result}")
+        except Exception as e:
+            logger.error(f"Cron refresh failed: {e}")
+
+    asyncio.create_task(_bg())
+    return {"triggered": True, "message": "Refresh started in background"}
 
 
 @router.get("/export")
@@ -554,10 +589,12 @@ def _generate_insights(finished, user_preds, ai_stats, user_stats, league_map):
 @router.get("/health")
 async def health_check() -> dict:
     import os
+    cal = get_calibration()
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "matches_in_db": get_match_count(),
         "last_refresh": get_last_refresh(),
         "api_key_set": bool(os.environ.get("API_FOOTBALL_KEY")),
+        "calibration": cal,
     }

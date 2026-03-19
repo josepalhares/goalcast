@@ -194,6 +194,85 @@ def get_match_count() -> int:
 SEED_PATH = Path(__file__).parent / "data" / "seed.json"
 
 
+def get_calibration() -> Optional[dict]:
+    """Get model calibration adjustments from DB."""
+    with get_db() as conn:
+        row = conn.execute("SELECT value FROM app_state WHERE key = 'calibration'").fetchone()
+        if row:
+            try:
+                return json.loads(row["value"])
+            except Exception:
+                pass
+    return None
+
+
+def set_calibration(cal: dict) -> None:
+    """Store model calibration adjustments."""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO app_state (key, value) VALUES ('calibration', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (json.dumps(cal),)
+        )
+        conn.commit()
+
+
+def calculate_calibration() -> Optional[dict]:
+    """Calculate calibration from all finished matches with AI predictions.
+    Returns None if fewer than 10 finished matches."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT m.actual_home_goals, m.actual_away_goals,
+                   p.predicted_home_goals, p.predicted_away_goals
+            FROM matches m
+            JOIN predictions p ON p.match_id = m.id AND p.source = 'ai'
+            WHERE m.status = 'finished' AND m.actual_home_goals IS NOT NULL
+        """).fetchall()
+
+    if len(rows) < 10:
+        return None
+
+    n = len(rows)
+    sum_act_h = sum(r["actual_home_goals"] for r in rows)
+    sum_act_a = sum(r["actual_away_goals"] for r in rows)
+    sum_pred_h = sum(r["predicted_home_goals"] for r in rows)
+    sum_pred_a = sum(r["predicted_away_goals"] for r in rows)
+
+    avg_act_h = sum_act_h / n
+    avg_act_a = sum_act_a / n
+    avg_pred_h = sum_pred_h / n
+    avg_pred_a = sum_pred_a / n
+
+    home_bias = round(avg_act_h - avg_pred_h, 3)
+    away_bias = round(avg_act_a - avg_pred_a, 3)
+
+    # Draw rate analysis
+    actual_draws = sum(1 for r in rows if r["actual_home_goals"] == r["actual_away_goals"])
+    pred_draws = sum(1 for r in rows if r["predicted_home_goals"] == r["predicted_away_goals"])
+    draw_rate_actual = round(actual_draws / n, 3)
+    draw_rate_predicted = round(pred_draws / n, 3)
+
+    cal = {
+        "matches": n,
+        "home_bias": home_bias,
+        "away_bias": away_bias,
+        "avg_actual_home": round(avg_act_h, 2),
+        "avg_actual_away": round(avg_act_a, 2),
+        "avg_predicted_home": round(avg_pred_h, 2),
+        "avg_predicted_away": round(avg_pred_a, 2),
+        "draw_rate_actual": draw_rate_actual,
+        "draw_rate_predicted": draw_rate_predicted,
+    }
+
+    set_calibration(cal)
+    logger.info(
+        f"Model calibration updated ({n} matches): "
+        f"home_bias={home_bias:+.2f}, away_bias={away_bias:+.2f}, "
+        f"draws: {draw_rate_actual:.0%} actual vs {draw_rate_predicted:.0%} predicted"
+    )
+    return cal
+
+
 def load_seed_if_empty() -> int:
     """If DB has 0 matches, load from seed.json. Returns number of matches loaded."""
     if get_match_count() > 0:

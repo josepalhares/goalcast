@@ -18,6 +18,7 @@ LEAGUE_IDS = {
     "Ligue 1": 61,
     "Liga Portugal": 94,
     "Champions League": 2,
+    "Europa League": 3,
 }
 
 LEAGUE_NAMES = {v: k for k, v in LEAGUE_IDS.items()}

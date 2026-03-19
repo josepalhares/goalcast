@@ -81,16 +81,36 @@
       }
     },
     {
+      "api_match_id": "1528348",
+      "league": "Europa League",
+      "home_team": "SC Braga",
+      "away_team": "Ferencvarosi TC",
+      "match_date": "2026-03-18T15:30:00+00:00",
+      "home_elo": 1955.02209473,
+      "away_elo": 1540.96716309,
+      "status": "finished",
+      "actual_home_goals": 4,
+      "actual_away_goals": 0,
+      "prediction": {
+        "predicted_home_goals": 3,
+        "predicted_away_goals": 0,
+        "home_win_prob": 0.785,
+        "draw_prob": 0.131,
+        "away_win_prob": 0.065,
+        "confidence": "high"
+      }
+    },
+    {
       "api_match_id": "1528327",
       "league": "Champions League",
       "home_team": "Barcelona",
       "away_team": "Newcastle",
       "match_date": "2026-03-18T17:45:00+00:00",
-      "home_elo": 1956.66345215,
+      "home_elo": 1956.66333008,
       "away_elo": 1862.05993652,
-      "status": "upcoming",
-      "actual_home_goals": null,
-      "actual_away_goals": null,
+      "status": "finished",
+      "actual_home_goals": 7,
+      "actual_away_goals": 2,
       "prediction": {
         "predicted_home_goals": 2,
         "predicted_away_goals": 0,
@@ -108,9 +128,9 @@
       "match_date": "2026-03-18T20:00:00+00:00",
       "home_elo": 1924.0255127,
       "away_elo": 1735.46252441,
-      "status": "upcoming",
-      "actual_home_goals": null,
-      "actual_away_goals": null,
+      "status": "finished",
+      "actual_home_goals": 4,
+      "actual_away_goals": 0,
       "prediction": {
         "predicted_home_goals": 2,
         "predicted_away_goals": 0,
@@ -128,9 +148,9 @@
       "match_date": "2026-03-18T20:00:00+00:00",
       "home_elo": 1766.06201172,
       "away_elo": 1861.38696289,
-      "status": "upcoming",
-      "actual_home_goals": null,
-      "actual_away_goals": null,
+      "status": "finished",
+      "actual_home_goals": 3,
+      "actual_away_goals": 2,
       "prediction": {
         "predicted_home_goals": 1,
         "predicted_away_goals": 1,
@@ -146,11 +166,11 @@
       "home_team": "Bayern M\u00fcnchen",
       "away_team": "Atalanta",
       "match_date": "2026-03-18T20:00:00+00:00",
-      "home_elo": 1986.94702148,
+      "home_elo": 1986.94689941,
       "away_elo": 1791.96899414,
-      "status": "upcoming",
-      "actual_home_goals": null,
-      "actual_away_goals": null,
+      "status": "finished",
+      "actual_home_goals": 4,
+      "actual_away_goals": 1,
       "prediction": {
         "predicted_home_goals": 2,
         "predicted_away_goals": 0,
@@ -159,7 +179,287 @@
         "away_win_prob": 0.145,
         "confidence": "medium"
       }
+    },
+    {
+      "api_match_id": "1528346",
+      "league": "Europa League",
+      "home_team": "Lyon",
+      "away_team": "Celta Vigo",
+      "match_date": "2026-03-19T17:45:00+00:00",
+      "home_elo": 1754.75036621,
+      "away_elo": 1724.46899414,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 2,
+        "predicted_away_goals": 1,
+        "home_win_prob": 0.517,
+        "draw_prob": 0.246,
+        "away_win_prob": 0.235,
+        "confidence": "medium"
+      }
+    },
+    {
+      "api_match_id": "1528347",
+      "league": "Europa League",
+      "home_team": "FC Midtjylland",
+      "away_team": "Nottingham Forest",
+      "match_date": "2026-03-19T17:45:00+00:00",
+      "home_elo": 1785.72521973,
+      "away_elo": 1373.37023926,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 3,
+        "predicted_away_goals": 0,
+        "home_win_prob": 0.784,
+        "draw_prob": 0.132,
+        "away_win_prob": 0.065,
+        "confidence": "high"
+      }
+    },
+    {
+      "api_match_id": "1528349",
+      "league": "Europa League",
+      "home_team": "SC Freiburg",
+      "away_team": "Genk",
+      "match_date": "2026-03-19T17:45:00+00:00",
+      "home_elo": 1667.89025879,
+      "away_elo": 1609.3807373,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 2,
+        "predicted_away_goals": 0,
+        "home_win_prob": 0.541,
+        "draw_prob": 0.24,
+        "away_win_prob": 0.217,
+        "confidence": "medium"
+      }
+    },
+    {
+      "api_match_id": "1528342",
+      "league": "Europa League",
+      "home_team": "Aston Villa",
+      "away_team": "Lille",
+      "match_date": "2026-03-19T20:00:00+00:00",
+      "home_elo": 1871.37011719,
+      "away_elo": 1724.75695801,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 2,
+        "predicted_away_goals": 0,
+        "home_win_prob": 0.61,
+        "draw_prob": 0.218,
+        "away_win_prob": 0.168,
+        "confidence": "medium"
+      }
+    },
+    {
+      "api_match_id": "1528343",
+      "league": "Europa League",
+      "home_team": "AS Roma",
+      "away_team": "Bologna",
+      "match_date": "2026-03-19T20:00:00+00:00",
+      "home_elo": 1779.02563477,
+      "away_elo": 1695.39428711,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 2,
+        "predicted_away_goals": 0,
+        "home_win_prob": 0.56,
+        "draw_prob": 0.235,
+        "away_win_prob": 0.203,
+        "confidence": "medium"
+      }
+    },
+    {
+      "api_match_id": "1528344",
+      "league": "Europa League",
+      "home_team": "FC Porto",
+      "away_team": "VfB Stuttgart",
+      "match_date": "2026-03-19T20:00:00+00:00",
+      "home_elo": 1794.36791992,
+      "away_elo": 1753.36779785,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 2,
+        "predicted_away_goals": 1,
+        "home_win_prob": 0.524,
+        "draw_prob": 0.244,
+        "away_win_prob": 0.23,
+        "confidence": "medium"
+      }
+    },
+    {
+      "api_match_id": "1528345",
+      "league": "Europa League",
+      "home_team": "Real Betis",
+      "away_team": "Panathinaikos",
+      "match_date": "2026-03-19T20:00:00+00:00",
+      "home_elo": 1741.19555664,
+      "away_elo": 1578.27966309,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 2,
+        "predicted_away_goals": 0,
+        "home_win_prob": 0.623,
+        "draw_prob": 0.213,
+        "away_win_prob": 0.16,
+        "confidence": "medium"
+      }
+    },
+    {
+      "api_match_id": "1378156",
+      "league": "Serie A",
+      "home_team": "Cagliari",
+      "away_team": "Napoli",
+      "match_date": "2026-03-20T17:30:00+00:00",
+      "home_elo": 1576.83032227,
+      "away_elo": 1793.23876953,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 1,
+        "predicted_away_goals": 1,
+        "home_win_prob": 0.324,
+        "draw_prob": 0.263,
+        "away_win_prob": 0.412,
+        "confidence": "low"
+      }
+    },
+    {
+      "api_match_id": "1388548",
+      "league": "Bundesliga",
+      "home_team": "RB Leipzig",
+      "away_team": "1899 Hoffenheim",
+      "match_date": "2026-03-20T19:30:00+00:00",
+      "home_elo": 1739.41357422,
+      "away_elo": 1714.51086426,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 2,
+        "predicted_away_goals": 1,
+        "home_win_prob": 0.51,
+        "draw_prob": 0.248,
+        "away_win_prob": 0.241,
+        "confidence": "medium"
+      }
+    },
+    {
+      "api_match_id": "1378159",
+      "league": "Serie A",
+      "home_team": "Genoa",
+      "away_team": "Udinese",
+      "match_date": "2026-03-20T19:45:00+00:00",
+      "home_elo": 1646.11914062,
+      "away_elo": 1614.63244629,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 2,
+        "predicted_away_goals": 1,
+        "home_win_prob": 0.517,
+        "draw_prob": 0.246,
+        "away_win_prob": 0.235,
+        "confidence": "medium"
+      }
+    },
+    {
+      "api_match_id": "1387933",
+      "league": "Ligue 1",
+      "home_team": "Lens",
+      "away_team": "Angers",
+      "match_date": "2026-03-20T19:45:00+00:00",
+      "home_elo": 1758.00097656,
+      "away_elo": 1556.77075195,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 2,
+        "predicted_away_goals": 0,
+        "home_win_prob": 0.651,
+        "draw_prob": 0.202,
+        "away_win_prob": 0.142,
+        "confidence": "high"
+      }
+    },
+    {
+      "api_match_id": "1379270",
+      "league": "Premier League",
+      "home_team": "Bournemouth",
+      "away_team": "Manchester United",
+      "match_date": "2026-03-20T20:00:00+00:00",
+      "home_elo": 1818.24243164,
+      "away_elo": 1878.02404785,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 1,
+        "predicted_away_goals": 1,
+        "home_win_prob": 0.444,
+        "draw_prob": 0.26,
+        "away_win_prob": 0.295,
+        "confidence": "low"
+      }
+    },
+    {
+      "api_match_id": "1391108",
+      "league": "La Liga",
+      "home_team": "Villarreal",
+      "away_team": "Real Sociedad",
+      "match_date": "2026-03-20T20:00:00+00:00",
+      "home_elo": 1750.06677246,
+      "away_elo": 1698.20068359,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 2,
+        "predicted_away_goals": 0,
+        "home_win_prob": 0.534,
+        "draw_prob": 0.242,
+        "away_win_prob": 0.222,
+        "confidence": "medium"
+      }
+    },
+    {
+      "api_match_id": "1396475",
+      "league": "Liga Portugal",
+      "home_team": "Estrela",
+      "away_team": "Casa Pia",
+      "match_date": "2026-03-20T20:15:00+00:00",
+      "home_elo": 2057.37646484,
+      "away_elo": 1448.07739258,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 3,
+        "predicted_away_goals": 0,
+        "home_win_prob": 0.845,
+        "draw_prob": 0.071,
+        "away_win_prob": 0.026,
+        "confidence": "high"
+      }
     }
   ],
-  "exported_at": "2026-03-18T14:02:09.486617"
+  "exported_at": "2026-03-19T10:37:43.654313"
 }

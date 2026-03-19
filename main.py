@@ -27,20 +27,6 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-REFRESH_INTERVAL_HOURS = 6
-
-
-async def _background_refresh_loop():
-    """Background task that refreshes data every 6 hours."""
-    while True:
-        await asyncio.sleep(REFRESH_INTERVAL_HOURS * 3600)
-        try:
-            logger.info(f"=== SCHEDULED REFRESH (every {REFRESH_INTERVAL_HOURS}h) ===")
-            result = await do_refresh(source="scheduled")
-            logger.info(f"Scheduled refresh result: {result}")
-        except Exception as e:
-            logger.error(f"Scheduled refresh failed: {e}")
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -67,13 +53,10 @@ async def lifespan(app: FastAPI):
             logger.error(f"Startup refresh failed: {e}")
 
     startup_task = asyncio.create_task(_startup_refresh())
-    refresh_task = asyncio.create_task(_background_refresh_loop())
 
     yield
 
-    # Shutdown
     startup_task.cancel()
-    refresh_task.cancel()
     logger.info("Shutting down GoalCast application")
 
 
