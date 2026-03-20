@@ -75,7 +75,7 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-4 flex items-center gap-2">
         <button @click="activeTab = 'matches'" :class="activeTab === 'matches' ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'" class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">Matches</button>
         <button @click="activeTab = 'history'" :class="activeTab === 'history' ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'" class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">History</button>
-        <span class="ml-auto text-xs text-apple-gray" x-show="!loading" x-text="filteredMatches.length + '/' + allMatches.length + ' matches'"></span>
+        <span class="ml-auto text-xs text-apple-gray" x-show="!loading" x-text="(activeTab === 'matches' ? matchesTabData.length : filteredMatches.length) + '/' + allMatches.length + ' matches'"></span>
     </div>
 
     <!-- Filter bar -->
@@ -475,9 +475,20 @@
                 });
             },
 
+            get matchesTabData() {
+                // Rolling window: 3 days back + today + all future
+                const today = new Date(); today.setHours(0,0,0,0);
+                const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() - 3);
+                const cutoffStr = cutoff.toISOString().slice(0,10);
+                return this.filteredMatches.filter(item => {
+                    const d = new Date(item.match.match_date).toISOString().slice(0,10);
+                    return d >= cutoffStr;
+                });
+            },
+
             get groupedData() {
                 const dateMap = {};
-                this.filteredMatches.forEach(item => {
+                this.matchesTabData.forEach(item => {
                     const d = new Date(item.match.match_date);
                     const dateKey = d.toISOString().slice(0, 10);
                     if (!dateMap[dateKey]) dateMap[dateKey] = {};
