@@ -24,7 +24,7 @@ pip install -r requirements.txt
 
 # Configure
 cp .env.example .env
-# Edit .env and add your API_FOOTBALL_KEY from https://dashboard.api-football.com
+# Edit .env and add your FOOTBALL_DATA_KEY from https://www.football-data.org/client/register
 
 # Run
 python main.py
@@ -35,7 +35,7 @@ python main.py
 
 1. Push to GitHub
 2. Connect repo on [Railway](https://railway.app)
-3. Add environment variable: `API_FOOTBALL_KEY=your_key`
+3. Add environment variable: `FOOTBALL_DATA_KEY=your_key`
 4. Deploy — Railway reads the `Procfile` automatically
 
 ### Keep data fresh (recommended)
@@ -63,7 +63,7 @@ The app automatically loads `data/seed.json` into the DB on startup if the DB is
 
 - **Backend:** Python, FastAPI, SQLite, httpx
 - **Frontend:** HTML, Tailwind CSS (CDN), Alpine.js, Chart.js
-- **Data:** API-Football (fixtures), ClubElo (Elo ratings)
+- **Data:** football-data.org (fixtures), ClubElo (Elo ratings)
 - **Model:** Poisson distribution with Elo-to-xG conversion
 
 ## API Endpoints

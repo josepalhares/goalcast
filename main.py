@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
     async def _startup_refresh():
         await asyncio.sleep(3)  # Let the server finish starting
         try:
-            if os.environ.get("API_FOOTBALL_KEY"):
+            if os.environ.get("FOOTBALL_DATA_KEY"):
                 logger.info("=== STARTUP REFRESH ===")
                 result = await do_refresh(source="startup")
                 logger.info(f"Startup refresh result: {result}")
