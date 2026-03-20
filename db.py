@@ -115,6 +115,29 @@ def upsert_match(
         ).fetchone()
 
         if existing is None:
+            # Check for fuzzy duplicate: same date, similar team names (different API source)
+            match_day = match_date[:10]  # Just the date part
+            possible_dupes = cursor.execute(
+                "SELECT id FROM matches WHERE match_date LIKE ? AND id != 0",
+                (match_day + "%",)
+            ).fetchall()
+            if possible_dupes:
+                ht_lower = home_team.lower()
+                at_lower = away_team.lower()
+                for row in possible_dupes:
+                    dupe = cursor.execute(
+                        "SELECT id, home_team, away_team FROM matches WHERE id = ?",
+                        (row["id"],)
+                    ).fetchone()
+                    dh = dupe["home_team"].lower()
+                    da = dupe["away_team"].lower()
+                    # Check if one name contains the other (e.g. "Bournemouth" in "AFC Bournemouth")
+                    home_match = ht_lower in dh or dh in ht_lower or ht_lower == dh
+                    away_match = at_lower in da or da in at_lower or at_lower == da
+                    if home_match and away_match:
+                        logger.info(f"Skipping duplicate: {home_team} vs {away_team} (matches existing {dupe['home_team']} vs {dupe['away_team']})")
+                        return dupe["id"]
+
             # New match — insert
             cursor.execute("""
                 INSERT INTO matches (api_match_id, league, home_team, away_team, match_date,
