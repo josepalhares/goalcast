@@ -83,11 +83,14 @@
         <!-- Competitions dropdown -->
         <div class="relative" x-data="{ open: false }" @click.outside="open = false">
             <button @click="open = !open" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:border-apple-blue/30 transition">
-                Competitions
-                <span x-show="filterLeagues.length < availableLeagues.length" class="bg-apple-blue text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center" x-text="filterLeagues.length"></span>
+                <span x-text="isFilterActive('leagues') ? 'Competitions (' + filterLeagues.length + ')' : 'Competitions: All'"></span>
                 <svg class="w-3 h-3 text-apple-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
             </button>
             <div x-show="open" x-transition class="absolute top-10 left-0 z-40 bg-white dark:bg-[#1a2234] border border-apple-border dark:border-white/10 rounded-xl shadow-lg p-2 w-52 max-h-60 overflow-y-auto">
+                <div class="flex gap-3 px-2 py-1 mb-1">
+                    <button @click="filterLeagues = [...availableLeagues]" class="text-[10px] font-semibold text-apple-blue hover:underline">Select All</button>
+                    <button @click="filterLeagues = []" class="text-[10px] font-semibold text-apple-blue hover:underline">Clear</button>
+                </div>
                 <template x-for="lg in availableLeagues" :key="lg">
                     <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-apple-bg dark:hover:bg-white/5 cursor-pointer">
                         <input type="checkbox" :value="lg" x-model="filterLeagues" class="rounded border-gray-300 text-apple-blue focus:ring-apple-blue/30 w-3.5 h-3.5">
@@ -100,11 +103,14 @@
         <!-- Teams dropdown -->
         <div class="relative" x-data="{ open: false, search: '' }" @click.outside="open = false">
             <button @click="open = !open" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:border-apple-blue/30 transition">
-                Teams
-                <span x-show="filterTeams.length > 0" class="bg-apple-blue text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center" x-text="filterTeams.length"></span>
+                <span x-text="isFilterActive('teams') ? 'Teams (' + filterTeams.length + ')' : 'Teams: All'"></span>
                 <svg class="w-3 h-3 text-apple-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
             </button>
             <div x-show="open" x-transition class="absolute top-10 left-0 z-40 bg-white dark:bg-[#1a2234] border border-apple-border dark:border-white/10 rounded-xl shadow-lg p-2 w-56 max-h-64 overflow-y-auto">
+                <div class="flex gap-3 px-2 py-1 mb-1">
+                    <button @click="filterTeams = [...availableTeams]" class="text-[10px] font-semibold text-apple-blue hover:underline">Select All</button>
+                    <button @click="filterTeams = []" class="text-[10px] font-semibold text-apple-blue hover:underline">Clear</button>
+                </div>
                 <input type="text" x-model="search" placeholder="Search teams..." class="w-full px-2 py-1.5 mb-1 text-xs border border-apple-border dark:border-white/10 rounded-lg bg-apple-bg dark:bg-white/5 text-apple-dark dark:text-white focus:outline-none focus:border-apple-blue placeholder-apple-gray">
                 <template x-for="tm in availableTeams.filter(t => !search || t.toLowerCase().includes(search.toLowerCase()))" :key="tm">
                     <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-apple-bg dark:hover:bg-white/5 cursor-pointer">
@@ -118,11 +124,14 @@
         <!-- Dates dropdown -->
         <div class="relative" x-data="{ open: false }" @click.outside="open = false">
             <button @click="open = !open" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:border-apple-blue/30 transition">
-                Dates
-                <span x-show="filterDates.length > 0 && filterDates.length < availableDates.length" class="bg-apple-blue text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center" x-text="filterDates.length"></span>
+                <span x-text="isFilterActive('dates') ? 'Dates (' + filterDates.length + ')' : 'Dates: All'"></span>
                 <svg class="w-3 h-3 text-apple-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
             </button>
             <div x-show="open" x-transition class="absolute top-10 left-0 z-40 bg-white dark:bg-[#1a2234] border border-apple-border dark:border-white/10 rounded-xl shadow-lg p-2 w-48 max-h-60 overflow-y-auto">
+                <div class="flex gap-3 px-2 py-1 mb-1">
+                    <button @click="filterDates = [...availableDates]" class="text-[10px] font-semibold text-apple-blue hover:underline">Select All</button>
+                    <button @click="filterDates = []" class="text-[10px] font-semibold text-apple-blue hover:underline">Clear</button>
+                </div>
                 <template x-for="dt in availableDates" :key="dt">
                     <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-apple-bg dark:hover:bg-white/5 cursor-pointer">
                         <input type="checkbox" :value="dt" x-model="filterDates" class="rounded border-gray-300 text-apple-blue focus:ring-apple-blue/30 w-3.5 h-3.5">
@@ -439,20 +448,26 @@
                 this.allMatches.forEach(m => s.add(new Date(m.match.match_date).toISOString().slice(0,10)));
                 return [...s].sort();
             },
+            isFilterActive(type) {
+                // A filter is "active" when some (but not all/none) items are selected
+                if (type === 'leagues') return this.filterLeagues.length > 0 && this.filterLeagues.length < this.availableLeagues.length;
+                if (type === 'teams') return this.filterTeams.length > 0 && this.filterTeams.length < this.availableTeams.length;
+                if (type === 'dates') return this.filterDates.length > 0 && this.filterDates.length < this.availableDates.length;
+                return false;
+            },
             get hasActiveFilters() {
-                return (this.filterLeagues.length > 0 && this.filterLeagues.length < this.availableLeagues.length)
-                    || this.filterTeams.length > 0
-                    || (this.filterDates.length > 0 && this.filterDates.length < this.availableDates.length);
+                return this.isFilterActive('leagues') || this.isFilterActive('teams') || this.isFilterActive('dates');
             },
             get filteredMatches() {
                 return this.allMatches.filter(item => {
-                    if (this.filterLeagues.length > 0 && this.filterLeagues.length < this.availableLeagues.length) {
+                    // Empty or full selection = no filter (show all)
+                    if (this.isFilterActive('leagues')) {
                         if (!this.filterLeagues.includes(item.match.league)) return false;
                     }
-                    if (this.filterTeams.length > 0) {
+                    if (this.isFilterActive('teams')) {
                         if (!this.filterTeams.includes(item.match.home_team) && !this.filterTeams.includes(item.match.away_team)) return false;
                     }
-                    if (this.filterDates.length > 0 && this.filterDates.length < this.availableDates.length) {
+                    if (this.isFilterActive('dates')) {
                         const d = new Date(item.match.match_date).toISOString().slice(0,10);
                         if (!this.filterDates.includes(d)) return false;
                     }
@@ -592,12 +607,10 @@
                     const key = this.getMatchKey(item.match);
                     if (!this.userPredictions[key]) this.userPredictions[key] = { home: null, away: null };
                 });
-                // Init filter leagues to all available
-                if (this.filterLeagues.length === 0) this.filterLeagues = [...this.availableLeagues];
             },
 
             clearFilters() {
-                this.filterLeagues = [...this.availableLeagues];
+                this.filterLeagues = [];
                 this.filterTeams = [];
                 this.filterDates = [];
             },
