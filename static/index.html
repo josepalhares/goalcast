@@ -69,15 +69,17 @@
         </div>
     </header>
 
+    <!-- Sticky tabs + filters wrapper -->
+    <div class="sticky top-14 z-40 bg-white/95 dark:bg-[#0f1623]/95 backdrop-blur-md border-b border-apple-border/50 dark:border-white/5 pb-3">
     <!-- Tabs -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 mt-6 flex items-center gap-2">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-4 flex items-center gap-2">
         <button @click="activeTab = 'matches'" :class="activeTab === 'matches' ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'" class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">Matches</button>
         <button @click="activeTab = 'history'" :class="activeTab === 'history' ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'" class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">History</button>
         <span class="ml-auto text-xs text-apple-gray" x-show="!loading" x-text="filteredMatches.length + '/' + allMatches.length + ' matches'"></span>
     </div>
 
     <!-- Filter bar -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 mt-3 flex items-center gap-2 flex-wrap" x-show="allMatches.length > 0">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 mt-2 flex items-center gap-2 flex-wrap" x-show="allMatches.length > 0">
         <!-- Competitions dropdown -->
         <div class="relative" x-data="{ open: false }" @click.outside="open = false">
             <button @click="open = !open" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:border-apple-blue/30 transition">
@@ -132,7 +134,11 @@
 
         <!-- Clear filters -->
         <button x-show="hasActiveFilters" @click="clearFilters()" class="text-[11px] text-apple-blue hover:underline">Clear filters</button>
+
+        <!-- Europa League note -->
+        <span class="text-[10px] text-gray-400 dark:text-gray-600 ml-auto">Europa League requires paid API tier</span>
     </div>
+    </div><!-- end sticky wrapper -->
 
     <!-- Content -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
@@ -151,15 +157,18 @@
             <template x-for="dateGroup in groupedData" :key="dateGroup.date">
                 <div :id="'date-' + dateGroup.date">
                     <!-- Date header -->
-                    <button @click="dateGroup.open = !dateGroup.open" class="w-full flex items-center gap-3 mb-3 group cursor-pointer">
-                        <div class="w-[3px] h-7 rounded-full" :class="isToday(dateGroup.date) ? 'bg-apple-blue' : 'bg-gray-200 dark:bg-gray-700'"></div>
-                        <h2 class="text-sm font-bold tracking-wide" :class="isToday(dateGroup.date) ? 'text-apple-blue' : 'text-apple-dark dark:text-gray-300'" x-text="formatDateHeader(dateGroup.date)"></h2>
-                        <span class="text-[10px] font-medium text-apple-gray" x-text="dateGroup.matchCount + ' matches'"></span>
-                        <template x-if="isFuture(dateGroup.date)">
-                            <span class="text-[10px] font-medium text-apple-blue">upcoming</span>
-                        </template>
-                        <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 ml-auto transition-transform" :class="dateGroup.open || '-rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                    </button>
+                    <div class="flex items-center gap-3 mb-3">
+                        <button @click="dateGroup.open = !dateGroup.open" class="flex items-center gap-3 group cursor-pointer flex-1 min-w-0">
+                            <div class="w-[3px] h-7 rounded-full shrink-0" :class="isToday(dateGroup.date) ? 'bg-apple-blue' : 'bg-gray-200 dark:bg-gray-700'"></div>
+                            <h2 class="text-sm font-bold tracking-wide" :class="isToday(dateGroup.date) ? 'text-apple-blue' : 'text-apple-dark dark:text-gray-300'" x-text="formatDateHeader(dateGroup.date)"></h2>
+                            <span class="text-[10px] font-medium text-apple-gray" x-text="dateGroup.matchCount + ' matches'"></span>
+                            <template x-if="isFuture(dateGroup.date)">
+                                <span class="text-[10px] font-medium text-apple-blue">upcoming</span>
+                            </template>
+                            <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 ml-auto transition-transform" :class="dateGroup.open || '-rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+                        <button @click.stop="copyAllAIForDate(dateGroup)" class="text-[10px] font-semibold text-apple-blue hover:text-blue-600 transition shrink-0 px-2 py-1 rounded hover:bg-apple-blue/5" title="Copy all AI predictions for this date">Copy All AI</button>
+                    </div>
 
                     <div x-show="isToday(dateGroup.date)" class="h-px bg-apple-blue/20 mb-3"></div>
 
@@ -649,6 +658,24 @@
                     home: item.prediction.predicted_home_goals,
                     away: item.prediction.predicted_away_goals,
                 };
+            },
+
+            copyAllAIForDate(dateGroup) {
+                let count = 0;
+                for (const leagueGroup of dateGroup.leagues) {
+                    for (const item of leagueGroup.matches) {
+                        const key = this.getMatchKey(item.match);
+                        if (this.savedPredictions[key]) continue; // Already saved
+                        const p = this.userPredictions[key];
+                        if (p && p.home !== null && p.home !== '' && p.away !== null && p.away !== '') continue; // Already filled
+                        this.userPredictions[key] = {
+                            home: item.prediction.predicted_home_goals,
+                            away: item.prediction.predicted_away_goals,
+                        };
+                        count++;
+                    }
+                }
+                if (count > 0) this.showToast(`Copied AI for ${count} matches`);
             },
 
             clearPrediction(match) {

@@ -327,13 +327,13 @@ def load_seed_if_empty() -> int:
                       m.get("actual_home_goals"), m.get("actual_away_goals")))
                 if cursor.rowcount > 0:
                     loaded += 1
-                    # Load prediction if present
+                    match_id = cursor.execute(
+                        "SELECT id FROM matches WHERE api_match_id = ?",
+                        (m["api_match_id"],)
+                    ).fetchone()["id"]
+                    # Load AI prediction if present
                     p = m.get("prediction")
                     if p:
-                        match_id = cursor.execute(
-                            "SELECT id FROM matches WHERE api_match_id = ?",
-                            (m["api_match_id"],)
-                        ).fetchone()["id"]
                         cursor.execute("""
                             INSERT OR IGNORE INTO predictions
                                 (match_id, source, predicted_home_goals, predicted_away_goals,
@@ -342,6 +342,15 @@ def load_seed_if_empty() -> int:
                         """, (match_id, p["predicted_home_goals"], p["predicted_away_goals"],
                               p["home_win_prob"], p["draw_prob"], p["away_win_prob"],
                               p.get("confidence", "medium")))
+                    # Load user prediction if present
+                    up = m.get("user_prediction")
+                    if up:
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO predictions
+                                (match_id, source, predicted_home_goals, predicted_away_goals,
+                                 home_win_prob, draw_prob, away_win_prob)
+                            VALUES (?, 'user', ?, ?, 0, 0, 0)
+                        """, (match_id, up["home"], up["away"]))
             except Exception as e:
                 logger.error(f"Seed import error for {m.get('api_match_id')}: {e}")
         conn.commit()
@@ -351,8 +360,22 @@ def load_seed_if_empty() -> int:
 
 
 def export_db_to_dict() -> dict:
-    """Export all matches + predictions as a JSON-serializable dict."""
+    """Export all matches + AI predictions + user predictions as JSON."""
     rows = get_all_matches_from_db()
+
+    # Also get user predictions
+    user_preds = {}
+    with get_db() as conn:
+        ups = conn.execute("""
+            SELECT match_id, predicted_home_goals, predicted_away_goals
+            FROM predictions WHERE source = 'user'
+        """).fetchall()
+        for up in ups:
+            user_preds[up["match_id"]] = {
+                "home": up["predicted_home_goals"],
+                "away": up["predicted_away_goals"],
+            }
+
     matches = []
     for r in rows:
         m = {
@@ -376,6 +399,10 @@ def export_db_to_dict() -> dict:
                 "away_win_prob": r["away_win_prob"],
                 "confidence": r.get("confidence"),
             }
+        # Include user prediction if exists
+        up = user_preds.get(r["id"])
+        if up:
+            m["user_prediction"] = up
         matches.append(m)
     return {"matches": matches, "exported_at": get_last_refresh() or "unknown"}
 
