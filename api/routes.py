@@ -7,7 +7,7 @@ import logging
 from models import Match, Prediction, MatchWithPrediction
 from api.club_elo import fetch_elo_ratings
 from api.football_api import fetch_upcoming_fixtures, fetch_recent_results, LEAGUE_NAMES, get_request_count, clear_cache
-from prediction.engine import generate_prediction, set_calibration as set_engine_calibration
+from prediction.engine import generate_prediction, set_calibration as set_engine_calibration, fit_model, set_dc_model
 from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count, get_last_refresh, set_last_refresh, export_db_to_dict, save_seed_file, calculate_calibration, get_calibration
 
 logger = logging.getLogger(__name__)
@@ -265,6 +265,16 @@ async def do_refresh(source: str = "manual") -> dict:
     _elo_cache = {}
 
     elo_ratings = await _ensure_elo_cache()
+
+    # Fit Dixon-Coles from existing finished matches BEFORE generating predictions
+    with get_db() as conn:
+        finished_rows = conn.execute("""
+            SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
+            FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
+        """).fetchall()
+    dc_model = fit_model([dict(r) for r in finished_rows])
+    set_dc_model(dc_model)
+
     before = get_request_count()
 
     upcoming_fixtures = await fetch_upcoming_fixtures(days_ahead=14)
@@ -370,7 +380,15 @@ async def do_refresh(source: str = "manual") -> dict:
     cal = calculate_calibration()
     if cal:
         set_engine_calibration(cal)
-        logger.info(f"Model calibration: home_bias={cal['home_bias']:+.2f}, away_bias={cal['away_bias']:+.2f}")
+
+    # Re-fit Dixon-Coles with any newly finished matches
+    with get_db() as conn:
+        finished_rows = conn.execute("""
+            SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
+            FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
+        """).fetchall()
+    dc_model = fit_model([dict(r) for r in finished_rows])
+    set_dc_model(dc_model)
 
     logger.info(
         f"Refresh ({source}) done: +{added} new, {updated} updated, "

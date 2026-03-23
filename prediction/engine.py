@@ -1,39 +1,211 @@
-"""Poisson-based prediction engine for match score prediction."""
+"""Dixon-Coles prediction engine with Elo prior and per-league calibration.
+
+The Dixon-Coles model extends Poisson regression by:
+1. Estimating per-team attack/defense strength parameters from historical goals
+2. Applying a low-scoring correction (rho) that boosts 0-0, 1-0, 0-1, 1-1 draws
+3. Using home advantage as a fitted parameter
+4. Applying time-decay so recent matches matter more
+
+When fewer than 20 finished matches exist, falls back to Elo-based Poisson.
+"""
+import math
 import numpy as np
 from scipy.stats import poisson
+from scipy.optimize import minimize
 from typing import Tuple, Dict, Optional
 import logging
 
 logger = logging.getLogger(__name__)
 
-HOME_ADVANTAGE = 65  # Elo points
-BASE_HOME_GOALS = 1.45
-BASE_AWAY_GOALS = 1.15
+# ── Elo fallback parameters ──
+ELO_HOME_ADVANTAGE = 65
+ELO_BASE_HOME = 1.45
+ELO_BASE_AWAY = 1.15
 MAX_XG = 3.5
 
-# Calibration adjustments (loaded from DB after refresh)
+# ── Dixon-Coles fitted model (populated by fit_model) ──
+_dc_model: Optional[dict] = None
 _calibration: Optional[dict] = None
+MIN_MATCHES_FOR_DC = 20
+
+
+# ─── Dixon-Coles core math ────────────────────────────────────
+
+def _tau(h: int, a: int, lam: float, mu: float, rho: float) -> float:
+    """Dixon-Coles low-scoring correction factor."""
+    if h == 0 and a == 0:
+        return 1 - lam * mu * rho
+    elif h == 0 and a == 1:
+        return 1 + lam * rho
+    elif h == 1 and a == 0:
+        return 1 + mu * rho
+    elif h == 1 and a == 1:
+        return 1 - rho
+    return 1.0
+
+
+def _dc_prob(h: int, a: int, lam: float, mu: float, rho: float) -> float:
+    """Probability of score h-a under Dixon-Coles model."""
+    return _tau(h, a, lam, mu, rho) * poisson.pmf(h, lam) * poisson.pmf(a, mu)
+
+
+def _dc_log_likelihood(params, matches, team_idx, n_teams):
+    """Negative log-likelihood for Dixon-Coles parameter estimation."""
+    attack = params[:n_teams]
+    defense = params[n_teams:2*n_teams]
+    home_adv = params[2*n_teams]
+    rho = params[2*n_teams + 1]
+
+    log_lik = 0.0
+    for home_i, away_i, hg, ag, weight in matches:
+        lam = max(0.01, math.exp(attack[home_i] - defense[away_i] + home_adv))
+        mu = max(0.01, math.exp(attack[away_i] - defense[home_i]))
+
+        p = _dc_prob(hg, ag, lam, mu, rho)
+        if p > 0:
+            log_lik += weight * math.log(p)
+        else:
+            log_lik += weight * (-20)  # penalty for impossible scores
+
+    return -log_lik  # Minimize negative
+
+
+def _time_decay_weight(days_ago: float, half_life: float = 30.0) -> float:
+    """Exponential decay: recent matches weighted more heavily."""
+    return math.exp(-0.693 * days_ago / half_life)
+
+
+# ─── Model fitting ─────────────────────────────────────────────
+
+def fit_model(finished_matches: list) -> Optional[dict]:
+    """Fit Dixon-Coles model from finished matches.
+
+    Args:
+        finished_matches: list of dicts with keys:
+            home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
+
+    Returns:
+        Fitted model dict or None if insufficient data.
+    """
+    if len(finished_matches) < MIN_MATCHES_FOR_DC:
+        logger.info(f"Only {len(finished_matches)} matches — need {MIN_MATCHES_FOR_DC} for Dixon-Coles")
+        return None
+
+    # Build team index
+    teams = set()
+    for m in finished_matches:
+        teams.add(m["home_team"])
+        teams.add(m["away_team"])
+    team_list = sorted(teams)
+    team_idx = {t: i for i, t in enumerate(team_list)}
+    n_teams = len(team_list)
+
+    # Build match data with time-decay weights
+    from datetime import datetime
+    now = datetime.utcnow()
+    match_data = []
+    for m in finished_matches:
+        hi = team_idx[m["home_team"]]
+        ai = team_idx[m["away_team"]]
+        hg = m["actual_home_goals"]
+        ag = m["actual_away_goals"]
+
+        # Calculate days ago for time decay
+        date_str = str(m.get("match_date", ""))[:10]
+        try:
+            match_date = datetime.strptime(date_str, "%Y-%m-%d")
+            days_ago = (now - match_date).days
+        except Exception:
+            days_ago = 30  # default
+
+        weight = _time_decay_weight(days_ago)
+        match_data.append((hi, ai, hg, ag, weight))
+
+    # Initial parameters: attack=0, defense=0, home_adv=0.25, rho=-0.1
+    x0 = np.zeros(2 * n_teams + 2)
+    x0[2 * n_teams] = 0.25  # home advantage
+    x0[2 * n_teams + 1] = -0.1  # rho (low-scoring correction)
+
+    # Add L2 regularization to prevent extreme parameters
+    def _regularized_nll(params, matches, team_idx, n_teams):
+        nll = _dc_log_likelihood(params, matches, team_idx, n_teams)
+        # Penalize large attack/defense values (shrink toward 0)
+        reg = 0.5 * np.sum(params[:2*n_teams] ** 2)
+        return nll + reg
+
+    # Optimize with regularization
+    try:
+        result = minimize(
+            _regularized_nll,
+            x0,
+            args=(match_data, team_idx, n_teams),
+            method='L-BFGS-B',
+            bounds=[(-3.0, 3.0)] * (2 * n_teams) + [(0.0, 1.0), (-0.5, 0.5)],
+            options={'maxiter': 1000, 'ftol': 1e-8},
+        )
+
+        if not result.success:
+            logger.warning(f"Dixon-Coles optimization warning: {result.message}")
+
+        attack = result.x[:n_teams]
+        defense = result.x[n_teams:2*n_teams]
+        home_adv = result.x[2*n_teams]
+        rho = result.x[2*n_teams + 1]
+
+        # Normalize: set mean attack to 0
+        mean_att = np.mean(attack)
+        attack -= mean_att
+
+        model = {
+            "team_list": team_list,
+            "team_idx": team_idx,
+            "attack": {t: round(float(attack[i]), 4) for i, t in enumerate(team_list)},
+            "defense": {t: round(float(defense[i]), 4) for i, t in enumerate(team_list)},
+            "home_adv": round(float(home_adv), 4),
+            "rho": round(float(rho), 4),
+            "n_teams": n_teams,
+            "n_matches": len(match_data),
+        }
+
+        # Log top/bottom teams by attack strength
+        sorted_att = sorted(model["attack"].items(), key=lambda x: x[1], reverse=True)
+        top3 = ", ".join(f"{t}({v:+.2f})" for t, v in sorted_att[:3])
+        bot3 = ", ".join(f"{t}({v:+.2f})" for t, v in sorted_att[-3:])
+        logger.info(
+            f"Dixon-Coles fitted: {n_teams} teams, {len(match_data)} matches, "
+            f"home_adv={home_adv:.3f}, rho={rho:.3f}"
+        )
+        logger.info(f"  Top attack: {top3}")
+        logger.info(f"  Weak attack: {bot3}")
+
+        return model
+
+    except Exception as e:
+        logger.error(f"Dixon-Coles fitting failed: {e}")
+        return None
+
+
+# ─── Public API ─────────────────────────────────────────────────
+
+def set_dc_model(model: Optional[dict]) -> None:
+    """Set the fitted Dixon-Coles model."""
+    global _dc_model
+    _dc_model = model
 
 
 def set_calibration(cal: Optional[dict]) -> None:
-    """Set calibration adjustments from DB."""
+    """Set calibration adjustments from DB (used as Elo fallback)."""
     global _calibration
     _calibration = cal
-    if cal:
-        logger.info(
-            f"Calibration active ({cal['matches']} matches): "
-            f"home_bias={cal['home_bias']:+.2f}, away_bias={cal['away_bias']:+.2f}"
-        )
 
 
-def elo_to_expected_goals(home_elo: float, away_elo: float, league: str = "") -> Tuple[float, float]:
-    """Convert Elo ratings to expected goals with per-league calibration."""
-    elo_diff = (home_elo - away_elo + HOME_ADVANTAGE) / 400
+def _elo_expected_goals(home_elo: float, away_elo: float, league: str = "") -> Tuple[float, float]:
+    """Elo-based xG fallback when Dixon-Coles can't predict a team."""
+    elo_diff = (home_elo - away_elo + ELO_HOME_ADVANTAGE) / 400
 
-    home_xg = BASE_HOME_GOALS * (10 ** (elo_diff * 0.22))
-    away_xg = BASE_AWAY_GOALS * (10 ** (-elo_diff * 0.22))
+    home_xg = ELO_BASE_HOME * (10 ** (elo_diff * 0.22))
+    away_xg = ELO_BASE_AWAY * (10 ** (-elo_diff * 0.22))
 
-    # Apply calibration: prefer league-specific, fall back to global
     if _calibration and _calibration.get("matches", 0) >= 10:
         league_cal = _calibration.get("by_league", {}).get(league)
         if league_cal:
@@ -43,33 +215,31 @@ def elo_to_expected_goals(home_elo: float, away_elo: float, league: str = "") ->
             home_xg += _calibration["home_bias"] * 0.5
             away_xg += _calibration["away_bias"] * 0.5
 
-    home_xg = min(max(0.4, home_xg), MAX_XG)
-    away_xg = min(max(0.3, away_xg), MAX_XG)
-
-    return round(home_xg, 2), round(away_xg, 2)
+    return min(max(0.4, home_xg), MAX_XG), min(max(0.3, away_xg), MAX_XG)
 
 
-def predict_score_poisson(home_xg: float, away_xg: float, max_goals: int = 7) -> Dict:
-    """Predict match score using Poisson distribution."""
+def predict_match(home_xg: float, away_xg: float, rho: float = 0.0, max_goals: int = 7) -> Dict:
+    """Predict match outcome from expected goals using Dixon-Coles probability matrix."""
     goal_range = range(max_goals)
     prob_matrix = np.zeros((max_goals, max_goals))
 
     for hg in goal_range:
         for ag in goal_range:
-            prob_matrix[hg, ag] = poisson.pmf(hg, home_xg) * poisson.pmf(ag, away_xg)
+            if rho != 0.0:
+                prob_matrix[hg, ag] = _dc_prob(hg, ag, home_xg, away_xg, rho)
+            else:
+                prob_matrix[hg, ag] = poisson.pmf(hg, home_xg) * poisson.pmf(ag, away_xg)
 
-    # Start with the pure Poisson mode
+    # Most likely scoreline
     best_idx = np.unravel_index(prob_matrix.argmax(), prob_matrix.shape)
     pred_h, pred_a = int(best_idx[0]), int(best_idx[1])
 
-    # Use rounded xG when the expected value is clearly above the integer threshold
-    rounded_h = round(home_xg)
-    rounded_a = round(away_xg)
+    # Nudge toward rounded xG when Poisson mode is too conservative
+    rounded_h, rounded_a = round(home_xg), round(away_xg)
     if home_xg >= 1.45 and rounded_h > pred_h:
         pred_h = rounded_h
     if away_xg >= 1.25 and rounded_a > pred_a:
         pred_a = rounded_a
-
     pred_h = min(pred_h, max_goals - 1)
     pred_a = min(pred_a, max_goals - 1)
 
@@ -85,7 +255,7 @@ def predict_score_poisson(home_xg: float, away_xg: float, max_goals: int = 7) ->
             else:
                 away_win_prob += p
 
-    # Determine confidence
+    # Confidence
     if pred_h > pred_a:
         outcome_prob = home_win_prob
     elif pred_h < pred_a:
@@ -110,8 +280,8 @@ def predict_score_poisson(home_xg: float, away_xg: float, max_goals: int = 7) ->
         "home_win_prob": round(home_win_prob, 3),
         "draw_prob": round(draw_prob, 3),
         "away_win_prob": round(away_win_prob, 3),
-        "home_xg": home_xg,
-        "away_xg": away_xg,
+        "home_xg": round(home_xg, 2),
+        "away_xg": round(away_xg, 2),
         "confidence": confidence,
         "confidence_pct": round(outcome_prob * 100),
     }
@@ -120,12 +290,33 @@ def predict_score_poisson(home_xg: float, away_xg: float, max_goals: int = 7) ->
 def generate_prediction(
     home_team: str, away_team: str, home_elo: float, away_elo: float, league: str = ""
 ) -> Dict:
-    """Generate full prediction for a match."""
-    home_xg, away_xg = elo_to_expected_goals(home_elo, away_elo, league)
-    prediction = predict_score_poisson(home_xg, away_xg)
+    """Generate prediction using Dixon-Coles if available, else Elo fallback."""
+    rho = 0.0
+    model_used = "elo"
+
+    if _dc_model and home_team in _dc_model["attack"] and away_team in _dc_model["attack"]:
+        # Use Dixon-Coles fitted parameters
+        att_h = _dc_model["attack"][home_team]
+        def_h = _dc_model["defense"][home_team]
+        att_a = _dc_model["attack"][away_team]
+        def_a = _dc_model["defense"][away_team]
+        home_adv = _dc_model["home_adv"]
+        rho = _dc_model["rho"]
+
+        home_xg = max(0.4, math.exp(att_h - def_a + home_adv))
+        away_xg = max(0.3, math.exp(att_a - def_h))
+
+        home_xg = min(home_xg, MAX_XG)
+        away_xg = min(away_xg, MAX_XG)
+        model_used = "dc"
+    else:
+        # Elo fallback
+        home_xg, away_xg = _elo_expected_goals(home_elo, away_elo, league)
+
+    prediction = predict_match(home_xg, away_xg, rho)
 
     logger.info(
-        f"{home_team} ({home_elo:.0f}) vs {away_team} ({away_elo:.0f}) | "
+        f"[{model_used.upper()}] {home_team} vs {away_team} | "
         f"xG: {home_xg:.2f}-{away_xg:.2f} | "
         f"Pred: {prediction['predicted_home_goals']}-{prediction['predicted_away_goals']} | "
         f"W/D/L: {prediction['home_win_prob']}/{prediction['draw_prob']}/{prediction['away_win_prob']}"
