@@ -142,9 +142,12 @@ def _find_elo(team_name: str, elo_ratings: Dict[str, float]) -> Optional[float]:
 
     for club, elo in elo_ratings.items():
         club_lower = club.lower()
-        shorter = min(team_lower, club_lower, key=len)
-        longer = max(team_lower, club_lower, key=len)
-        if len(shorter) >= 4 and shorter in longer and len(shorter) / len(longer) > 0.5:
+        # Ensure shorter/longer are correctly assigned (not same string)
+        if len(team_lower) <= len(club_lower):
+            shorter, longer = team_lower, club_lower
+        else:
+            shorter, longer = club_lower, team_lower
+        if len(shorter) >= 4 and shorter != longer and shorter in longer and len(shorter) / len(longer) > 0.5:
             return elo
 
     return None
