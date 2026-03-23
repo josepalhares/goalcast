@@ -9,18 +9,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.middleware.sessions import SessionMiddleware
 
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass  # python-dotenv not required in production
+    pass
 
 from api.routes import router, do_refresh
+from api.auth import router as auth_router, setup_oauth
 from db import init_db, load_seed_if_empty, get_db
 from prediction.engine import load_xg_data, fit_model, set_dc_model
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -31,7 +32,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle events for FastAPI app."""
     logger.info("Starting GoalCast application")
     init_db()
     loaded = load_seed_if_empty()
@@ -40,12 +40,10 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Database initialized")
 
-    # Load xG data if available
     xg_count = load_xg_data()
     if xg_count:
         logger.info(f"xG data loaded: {xg_count} teams")
 
-    # Pre-fit Dixon-Coles from seed data so predictions work immediately
     with get_db() as conn:
         finished = conn.execute("""
             SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
@@ -56,16 +54,18 @@ async def lifespan(app: FastAPI):
         set_dc_model(dc)
         logger.info(f"Dixon-Coles pre-fitted from {len(finished)} seed matches")
 
-    # Run startup refresh in background (don't block server startup)
+    # Setup Google OAuth
+    setup_oauth()
+
     async def _startup_refresh():
-        await asyncio.sleep(3)  # Let the server finish starting
+        await asyncio.sleep(3)
         try:
             if os.environ.get("FOOTBALL_DATA_KEY"):
                 logger.info("=== STARTUP REFRESH ===")
                 result = await do_refresh(source="startup")
                 logger.info(f"Startup refresh result: {result}")
             else:
-                logger.warning("No API_FOOTBALL_KEY set — skipping startup refresh")
+                logger.warning("No FOOTBALL_DATA_KEY set — skipping startup refresh")
         except Exception as e:
             logger.error(f"Startup refresh failed: {e}")
 
@@ -77,7 +77,6 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down GoalCast application")
 
 
-# Create FastAPI app
 app = FastAPI(
     title="GoalCast",
     description="AI-Powered Football Score Predictor",
@@ -85,7 +84,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware
+# Session middleware (must be added before routes)
+session_secret = os.environ.get("SESSION_SECRET", "goalcast-dev-secret-change-me")
+app.add_middleware(SessionMiddleware, secret_key=session_secret, max_age=30 * 24 * 3600)  # 30 days
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -94,17 +96,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
+# Routers
+app.include_router(auth_router)
 app.include_router(router)
 
-# Mount static files
+# Static files
 static_path = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 
 @app.get("/")
 async def root():
-    """Serve the main application page."""
     return FileResponse(static_path / "index.html")
 
 

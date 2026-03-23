@@ -68,6 +68,27 @@ def init_db() -> None:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE,
+                name TEXT,
+                picture_url TEXT,
+                role TEXT DEFAULT 'user',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS allowed_emails (
+                email TEXT PRIMARY KEY
+            )
+        """)
+
+        # Seed admin emails
+        for email in ['jose.palhares@zendesk.com', 'josepalhares@gmail.com']:
+            cursor.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (email,))
+
         conn.commit()
 
     # Add confidence column if missing (migration for existing DBs)
