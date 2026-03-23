@@ -7,7 +7,7 @@ import logging
 from models import Match, Prediction, MatchWithPrediction
 from api.club_elo import fetch_elo_ratings
 from api.football_api import fetch_upcoming_fixtures, fetch_recent_results, LEAGUE_NAMES, get_request_count, clear_cache
-from prediction.engine import generate_prediction, set_calibration as set_engine_calibration, fit_model, set_dc_model
+from prediction.engine import generate_prediction, set_calibration as set_engine_calibration, fit_model, set_dc_model, log_accuracy_report
 from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count, get_last_refresh, set_last_refresh, export_db_to_dict, save_seed_file, calculate_calibration, get_calibration
 
 logger = logging.getLogger(__name__)
@@ -395,6 +395,16 @@ async def do_refresh(source: str = "manual") -> dict:
         """).fetchall()
     dc_model = fit_model([dict(r) for r in finished_rows])
     set_dc_model(dc_model)
+
+    # Log accuracy report
+    with get_db() as conn:
+        report_rows = conn.execute("""
+            SELECT m.home_team, m.away_team, m.actual_home_goals, m.actual_away_goals,
+                   m.league, p.predicted_home_goals as pred_h, p.predicted_away_goals as pred_a
+            FROM matches m JOIN predictions p ON p.match_id = m.id AND p.source = 'ai'
+            WHERE m.status = 'finished' AND m.actual_home_goals IS NOT NULL
+        """).fetchall()
+    log_accuracy_report([dict(r) for r in report_rows])
 
     logger.info(
         f"Refresh ({source}) done: +{added} new, {updated} updated, "
