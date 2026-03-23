@@ -336,7 +336,8 @@ async def do_refresh(source: str = "manual") -> dict:
                 added += 1
 
             pred = generate_prediction(
-                parsed["home_team"], parsed["away_team"], home_elo, away_elo
+                parsed["home_team"], parsed["away_team"], home_elo, away_elo,
+                league=parsed["league"]
             )
             upsert_ai_prediction(
                 match_id=match_id,

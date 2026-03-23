@@ -241,12 +241,12 @@ def set_calibration(cal: dict) -> None:
 
 
 def calculate_calibration() -> Optional[dict]:
-    """Calculate calibration from all finished matches with AI predictions.
-    Returns None if fewer than 10 finished matches."""
+    """Calculate global + per-league calibration from finished matches."""
     with get_db() as conn:
         rows = conn.execute("""
             SELECT m.actual_home_goals, m.actual_away_goals,
-                   p.predicted_home_goals, p.predicted_away_goals
+                   p.predicted_home_goals, p.predicted_away_goals,
+                   m.league
             FROM matches m
             JOIN predictions p ON p.match_id = m.id AND p.source = 'ai'
             WHERE m.status = 'finished' AND m.actual_home_goals IS NOT NULL
@@ -255,43 +255,58 @@ def calculate_calibration() -> Optional[dict]:
     if len(rows) < 10:
         return None
 
+    def _calc_bias(subset):
+        n = len(subset)
+        if n == 0:
+            return None
+        avg_act_h = sum(r["actual_home_goals"] for r in subset) / n
+        avg_act_a = sum(r["actual_away_goals"] for r in subset) / n
+        avg_pred_h = sum(r["predicted_home_goals"] for r in subset) / n
+        avg_pred_a = sum(r["predicted_away_goals"] for r in subset) / n
+        return {
+            "matches": n,
+            "home_bias": round(avg_act_h - avg_pred_h, 3),
+            "away_bias": round(avg_act_a - avg_pred_a, 3),
+            "avg_actual_home": round(avg_act_h, 2),
+            "avg_actual_away": round(avg_act_a, 2),
+            "avg_predicted_home": round(avg_pred_h, 2),
+            "avg_predicted_away": round(avg_pred_a, 2),
+        }
+
+    # Global calibration
     n = len(rows)
-    sum_act_h = sum(r["actual_home_goals"] for r in rows)
-    sum_act_a = sum(r["actual_away_goals"] for r in rows)
-    sum_pred_h = sum(r["predicted_home_goals"] for r in rows)
-    sum_pred_a = sum(r["predicted_away_goals"] for r in rows)
-
-    avg_act_h = sum_act_h / n
-    avg_act_a = sum_act_a / n
-    avg_pred_h = sum_pred_h / n
-    avg_pred_a = sum_pred_a / n
-
-    home_bias = round(avg_act_h - avg_pred_h, 3)
-    away_bias = round(avg_act_a - avg_pred_a, 3)
-
-    # Draw rate analysis
+    global_cal = _calc_bias(rows)
     actual_draws = sum(1 for r in rows if r["actual_home_goals"] == r["actual_away_goals"])
     pred_draws = sum(1 for r in rows if r["predicted_home_goals"] == r["predicted_away_goals"])
-    draw_rate_actual = round(actual_draws / n, 3)
-    draw_rate_predicted = round(pred_draws / n, 3)
+
+    # Per-league calibration (min 5 matches per league)
+    from collections import defaultdict
+    by_league = defaultdict(list)
+    for r in rows:
+        by_league[r["league"]].append(r)
+
+    league_cal = {}
+    for league, league_rows in sorted(by_league.items()):
+        if len(league_rows) >= 5:
+            lc = _calc_bias(league_rows)
+            league_cal[league] = lc
+            logger.info(
+                f"  {league} ({lc['matches']}m): "
+                f"home_bias={lc['home_bias']:+.2f}, away_bias={lc['away_bias']:+.2f}"
+            )
 
     cal = {
-        "matches": n,
-        "home_bias": home_bias,
-        "away_bias": away_bias,
-        "avg_actual_home": round(avg_act_h, 2),
-        "avg_actual_away": round(avg_act_a, 2),
-        "avg_predicted_home": round(avg_pred_h, 2),
-        "avg_predicted_away": round(avg_pred_a, 2),
-        "draw_rate_actual": draw_rate_actual,
-        "draw_rate_predicted": draw_rate_predicted,
+        **global_cal,
+        "draw_rate_actual": round(actual_draws / n, 3),
+        "draw_rate_predicted": round(pred_draws / n, 3),
+        "by_league": league_cal,
     }
 
     set_calibration(cal)
     logger.info(
         f"Model calibration updated ({n} matches): "
-        f"home_bias={home_bias:+.2f}, away_bias={away_bias:+.2f}, "
-        f"draws: {draw_rate_actual:.0%} actual vs {draw_rate_predicted:.0%} predicted"
+        f"home_bias={global_cal['home_bias']:+.2f}, away_bias={global_cal['away_bias']:+.2f}, "
+        f"draws: {cal['draw_rate_actual']:.0%} actual vs {cal['draw_rate_predicted']:.0%} predicted"
     )
     return cal
 

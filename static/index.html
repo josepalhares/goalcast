@@ -205,7 +205,7 @@
                                                     <!-- Home team -->
                                                     <div class="w-[150px] shrink-0 text-right">
                                                         <div class="text-[13px] font-semibold text-apple-dark dark:text-gray-100 leading-tight" x-text="item.match.home_team"></div>
-                                                        <div class="text-[10px] text-apple-gray tabular-nums" x-text="item.match.home_elo?.toFixed(0)"></div>
+                                                        <div class="text-[10px] text-apple-gray tabular-nums" x-text="'Elo ' + item.match.home_elo?.toFixed(0)" title="ClubElo rating (updated periodically)"></div>
                                                     </div>
 
                                                     <!-- Probability bar -->
@@ -220,7 +220,7 @@
                                                     <!-- Away team -->
                                                     <div class="w-[150px] shrink-0">
                                                         <div class="text-[13px] font-semibold text-apple-dark dark:text-gray-100 leading-tight" x-text="item.match.away_team"></div>
-                                                        <div class="text-[10px] text-apple-gray tabular-nums" x-text="item.match.away_elo?.toFixed(0)"></div>
+                                                        <div class="text-[10px] text-apple-gray tabular-nums" x-text="'Elo ' + item.match.away_elo?.toFixed(0)" title="ClubElo rating (updated periodically)"></div>
                                                     </div>
 
                                                     <!-- AI prediction -->
@@ -743,7 +743,10 @@
             },
 
             formatTime(dateStr) {
-                return new Date(dateStr).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+                const d = new Date(dateStr);
+                // If stored as midnight UTC, kick-off time is unconfirmed
+                if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0) return 'TBD';
+                return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
             },
 
             leagueColor(league) {
@@ -813,6 +816,7 @@
 
                 let aiExact = 0, aiOutcome = 0, aiMaeH = 0, aiMaeA = 0;
                 let userExact = 0, userOutcome = 0, userMaeH = 0, userMaeA = 0, userCount = 0;
+                let h2hAiExact = 0, h2hAiOutcome = 0; // AI stats only on matches user also predicted
                 const leagueMap = {};
                 const dateMap = {};
                 const log = [];
@@ -843,6 +847,9 @@
                         userMaeH += Math.abs(userH - actH);
                         userMaeA += Math.abs(userA - actA);
                         userRes = uE ? 'exact' : (uO ? 'close' : 'miss');
+                        // Head-to-head: AI accuracy on this same match
+                        if (aiE) h2hAiExact++;
+                        if (aiO) h2hAiOutcome++;
                     }
 
                     // League
@@ -890,9 +897,12 @@
                         insights.push(`Avg goals/match: ${avgActual.toFixed(1)} actual vs ${avgAI.toFixed(1)} AI — the model ${dir} scoring by ${Math.abs(avgActual - avgAI).toFixed(1)}.`);
                     }
                     if (userCount >= 3) {
-                        const aiR = t ? aiOutcome/t : 0, uR = userCount ? userOutcome/userCount : 0;
-                        if (uR > aiR) insights.push(`You outperform the AI (${(uR*100).toFixed(0)}% vs ${(aiR*100).toFixed(0)}% correct outcome).`);
-                        else if (aiR > uR) insights.push(`AI edges you (${(aiR*100).toFixed(0)}% vs ${(uR*100).toFixed(0)}% correct outcome).`);
+                        // Head-to-head comparison (same matches only)
+                        const h2hAiR = h2hAiOutcome / userCount;
+                        const uR = userOutcome / userCount;
+                        if (uR > h2hAiR) insights.push(`Head-to-head: you beat the AI (${(uR*100).toFixed(0)}% vs ${(h2hAiR*100).toFixed(0)}% correct outcome on ${userCount} shared matches).`);
+                        else if (h2hAiR > uR) insights.push(`Head-to-head: AI beats you (${(h2hAiR*100).toFixed(0)}% vs ${(uR*100).toFixed(0)}% correct outcome on ${userCount} shared matches).`);
+                        else insights.push(`Head-to-head: tied with AI at ${(uR*100).toFixed(0)}% correct outcome on ${userCount} shared matches.`);
                     }
                     const aiDraws = finished.filter(m => oc(m.prediction.predicted_home_goals, m.prediction.predicted_away_goals) === 'D').length;
                     const actDraws = finished.filter(m => oc(m.match.actual_home_goals, m.match.actual_away_goals) === 'D').length;
@@ -917,6 +927,9 @@
                     userExactRate: userCount ? userExact / userCount : 0,
                     userOutcomeRate: userCount ? userOutcome / userCount : 0,
                     userMae: userCount ? (userMaeH + userMaeA) / (2 * userCount) : 0,
+                    // Head-to-head: AI accuracy only on matches user also predicted
+                    h2hAiExactRate: userCount ? h2hAiExact / userCount : 0,
+                    h2hAiOutcomeRate: userCount ? h2hAiOutcome / userCount : 0,
                     byLeague, byDate, log, insights,
                 };
             },

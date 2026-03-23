@@ -26,17 +26,22 @@ def set_calibration(cal: Optional[dict]) -> None:
         )
 
 
-def elo_to_expected_goals(home_elo: float, away_elo: float) -> Tuple[float, float]:
-    """Convert Elo ratings to expected goals with calibration adjustments."""
+def elo_to_expected_goals(home_elo: float, away_elo: float, league: str = "") -> Tuple[float, float]:
+    """Convert Elo ratings to expected goals with per-league calibration."""
     elo_diff = (home_elo - away_elo + HOME_ADVANTAGE) / 400
 
     home_xg = BASE_HOME_GOALS * (10 ** (elo_diff * 0.22))
     away_xg = BASE_AWAY_GOALS * (10 ** (-elo_diff * 0.22))
 
-    # Apply calibration bias if available (nudge xG toward actual averages)
+    # Apply calibration: prefer league-specific, fall back to global
     if _calibration and _calibration.get("matches", 0) >= 10:
-        home_xg += _calibration["home_bias"] * 0.5  # Apply half the bias (conservative)
-        away_xg += _calibration["away_bias"] * 0.5
+        league_cal = _calibration.get("by_league", {}).get(league)
+        if league_cal:
+            home_xg += league_cal["home_bias"] * 0.5
+            away_xg += league_cal["away_bias"] * 0.5
+        else:
+            home_xg += _calibration["home_bias"] * 0.5
+            away_xg += _calibration["away_bias"] * 0.5
 
     home_xg = min(max(0.4, home_xg), MAX_XG)
     away_xg = min(max(0.3, away_xg), MAX_XG)
@@ -113,10 +118,10 @@ def predict_score_poisson(home_xg: float, away_xg: float, max_goals: int = 7) ->
 
 
 def generate_prediction(
-    home_team: str, away_team: str, home_elo: float, away_elo: float
+    home_team: str, away_team: str, home_elo: float, away_elo: float, league: str = ""
 ) -> Dict:
     """Generate full prediction for a match."""
-    home_xg, away_xg = elo_to_expected_goals(home_elo, away_elo)
+    home_xg, away_xg = elo_to_expected_goals(home_elo, away_elo, league)
     prediction = predict_score_poisson(home_xg, away_xg)
 
     logger.info(
