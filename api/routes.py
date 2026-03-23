@@ -7,6 +7,7 @@ import logging
 from models import Match, Prediction, MatchWithPrediction
 from api.club_elo import fetch_elo_ratings
 from api.football_api import fetch_upcoming_fixtures, fetch_recent_results, LEAGUE_NAMES, get_request_count, clear_cache
+from api.espn_api import fetch_espn_matches
 from prediction.engine import generate_prediction, set_calibration as set_engine_calibration, fit_model, set_dc_model, log_accuracy_report
 from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count, get_last_refresh, set_last_refresh, export_db_to_dict, save_seed_file, calculate_calibration, get_calibration
 
@@ -286,16 +287,20 @@ async def do_refresh(source: str = "manual") -> dict:
     upcoming_fixtures = await fetch_upcoming_fixtures(days_ahead=14)
     recent_fixtures = await fetch_recent_results(days_back=14)
 
+    # Fetch Europa League + Conference League from ESPN
+    espn_matches = await fetch_espn_matches()
+
     after = get_request_count()
     api_calls = after - before
-    logger.info(f"API calls this refresh: {api_calls} (session total: {after})")
+    logger.info(f"API calls this refresh: {api_calls} football-data.org + {len(espn_matches)} ESPN matches")
 
     # Log what we got per league
     league_counts = {}
-    for f in upcoming_fixtures + recent_fixtures:
+    all_fetched = upcoming_fixtures + recent_fixtures + espn_matches
+    for f in all_fetched:
         lg = f["league"]["name"]
         league_counts[lg] = league_counts.get(lg, 0) + 1
-    for lg_name in LEAGUE_NAMES.values():
+    for lg_name in list(LEAGUE_NAMES.values()) + ["Europa League", "Conference League"]:
         count = league_counts.get(lg_name, 0)
         if count == 0:
             logger.warning(f"No fixtures found for {lg_name} — API may have limited data for this period")
@@ -311,6 +316,13 @@ async def do_refresh(source: str = "manual") -> dict:
     ] + [
         (f, "finished") for f in recent_fixtures
     ]
+    # Add ESPN matches (determine status from fixture data)
+    for f in espn_matches:
+        s = f["fixture"]["status"]["short"]
+        if s == "FT":
+            all_fixtures.append((f, "finished"))
+        elif s == "NS":
+            all_fixtures.append((f, "upcoming"))
 
     for fixture, status in all_fixtures:
         try:
