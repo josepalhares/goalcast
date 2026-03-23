@@ -417,13 +417,15 @@ async def do_refresh(source: str = "manual") -> dict:
     if cal:
         set_engine_calibration(cal)
 
-    # Re-fit Dixon-Coles with any newly finished matches
+    # Re-fit Dixon-Coles in thread pool (CPU-bound, don't block event loop)
+    import asyncio
     with get_db() as conn:
         finished_rows = conn.execute("""
             SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
             FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
         """).fetchall()
-    dc_model = fit_model([dict(r) for r in finished_rows])
+    dc_data = [dict(r) for r in finished_rows]
+    dc_model = await asyncio.get_event_loop().run_in_executor(None, fit_model, dc_data)
     set_dc_model(dc_model)
 
     # Log accuracy report

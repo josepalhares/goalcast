@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
     async def _background_init():
         await asyncio.sleep(1)
 
-        # Fit Dixon-Coles from seed data
+        # Fit Dixon-Coles in thread pool (CPU-bound)
         try:
             with get_db() as conn:
                 finished = conn.execute("""
@@ -58,7 +58,9 @@ async def lifespan(app: FastAPI):
                     FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
                 """).fetchall()
             if finished:
-                dc = fit_model([dict(r) for r in finished])
+                dc = await asyncio.get_event_loop().run_in_executor(
+                    None, fit_model, [dict(r) for r in finished]
+                )
                 set_dc_model(dc)
                 logger.info(f"Dixon-Coles fitted from {len(finished)} matches")
         except Exception as e:
