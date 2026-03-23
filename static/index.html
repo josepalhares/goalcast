@@ -585,9 +585,14 @@
                     this._initUserPredictions();
                     this._scrollToToday();
 
-                    // Trigger background stale check (non-blocking, fire-and-forget)
+                    // Trigger background stale check, then poll for completion
                     setTimeout(() => {
-                        fetch('/api/refresh-if-stale', { method: 'POST' }).catch(() => {});
+                        fetch('/api/refresh-if-stale', { method: 'POST' })
+                            .then(res => res.ok ? res.json() : null)
+                            .then(data => {
+                                if (data && data.triggered) this._pollForRefresh();
+                            })
+                            .catch(() => {});
                     }, 2000);
                 } catch (err) {
                     this.error = err.message;
@@ -615,6 +620,37 @@
                 } finally {
                     this.loading = false;
                 }
+            },
+
+            _pollForRefresh() {
+                // Poll /api/health every 10s until last_refresh changes, then reload matches
+                const startedAt = Date.now();
+                const maxMs = 5 * 60 * 1000; // 5 minutes
+                let baseline = null;
+
+                const poll = setInterval(async () => {
+                    if (Date.now() - startedAt > maxMs) {
+                        clearInterval(poll);
+                        return;
+                    }
+                    try {
+                        const r = await fetch('/api/health');
+                        if (!r.ok) return;
+                        const h = await r.json();
+                        const lr = h.last_refresh;
+                        if (!baseline) { baseline = lr; return; }
+                        if (lr && lr !== baseline) {
+                            clearInterval(poll);
+                            // Refresh completed — reload matches silently
+                            const r2 = await fetch('/api/matches');
+                            if (r2.ok) {
+                                this.allMatches = await r2.json();
+                                this._initUserPredictions();
+                                this.showToast('Predictions updated');
+                            }
+                        }
+                    } catch (e) {}
+                }, 10000);
             },
 
             _initUserPredictions() {
