@@ -62,7 +62,7 @@ def _upsert_user(email: str, name: str, picture: str) -> dict:
             conn.commit()
             role = "user"
             # Auto-promote admin emails
-            admin_emails = ['jose.palhares@zendesk.com', 'josepalhares@gmail.com']
+            admin_emails = ['jose.palhares@zendesk.com', 'josepalhares@gmail.com', 'josepalhares@hotmail.com']
             if email in admin_emails:
                 conn.execute("UPDATE users SET role = 'admin' WHERE email = ?", (email,))
                 conn.commit()

@@ -86,7 +86,7 @@ def init_db() -> None:
         """)
 
         # Seed admin emails
-        for email in ['jose.palhares@zendesk.com', 'josepalhares@gmail.com']:
+        for email in ['jose.palhares@zendesk.com', 'josepalhares@gmail.com', 'josepalhares@hotmail.com']:
             cursor.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (email,))
 
         conn.commit()
