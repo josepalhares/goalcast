@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting GoalCast application")
+
+    # Fast synchronous startup — must complete in <5 seconds
     init_db()
     loaded = load_seed_if_empty()
     if loaded:
@@ -40,25 +42,30 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Database initialized")
 
-    xg_count = load_xg_data()
-    if xg_count:
-        logger.info(f"xG data loaded: {xg_count} teams")
-
-    with get_db() as conn:
-        finished = conn.execute("""
-            SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
-            FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
-        """).fetchall()
-    if finished:
-        dc = fit_model([dict(r) for r in finished])
-        set_dc_model(dc)
-        logger.info(f"Dixon-Coles pre-fitted from {len(finished)} seed matches")
-
-    # Setup Google OAuth
+    load_xg_data()
     setup_oauth()
+    logger.info("Server ready — accepting requests (model fitting in background)")
 
-    async def _startup_refresh():
-        await asyncio.sleep(3)
+    # ALL slow work (model fitting + API refresh) runs in background
+    async def _background_init():
+        await asyncio.sleep(1)
+
+        # Fit Dixon-Coles from seed data
+        try:
+            with get_db() as conn:
+                finished = conn.execute("""
+                    SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
+                    FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
+                """).fetchall()
+            if finished:
+                dc = fit_model([dict(r) for r in finished])
+                set_dc_model(dc)
+                logger.info(f"Dixon-Coles fitted from {len(finished)} matches")
+        except Exception as e:
+            logger.error(f"Model fitting failed: {e}")
+
+        # API refresh
+        await asyncio.sleep(2)
         try:
             if os.environ.get("FOOTBALL_DATA_KEY"):
                 logger.info("=== STARTUP REFRESH ===")
@@ -69,11 +76,11 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Startup refresh failed: {e}")
 
-    startup_task = asyncio.create_task(_startup_refresh())
+    bg_task = asyncio.create_task(_background_init())
 
     yield
 
-    startup_task.cancel()
+    bg_task.cancel()
     logger.info("Shutting down GoalCast application")
 
 
@@ -84,9 +91,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Session middleware (must be added before routes)
 session_secret = os.environ.get("SESSION_SECRET", "goalcast-dev-secret-change-me")
-app.add_middleware(SessionMiddleware, secret_key=session_secret, max_age=30 * 24 * 3600)  # 30 days
+app.add_middleware(SessionMiddleware, secret_key=session_secret, max_age=30 * 24 * 3600)
 
 app.add_middleware(
     CORSMiddleware,
@@ -96,11 +102,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers
 app.include_router(auth_router)
 app.include_router(router)
 
-# Static files
 static_path = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
