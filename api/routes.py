@@ -75,7 +75,7 @@ _TEAM_ALIASES = {
     "Gil Vicente FC": "Gil Vicente",
     "Moreirense FC": "Moreirense",
     "GD Estoril Praia": "Estoril",
-    "CF Estrela da Amadora": "Estrela",
+    "CF Estrela da Amadora": "Estrela Amadora",
     "CD Nacional": "Nacional",
     "FC Famalicão": "Famalicao",
     "FC Arouca": "Arouca",

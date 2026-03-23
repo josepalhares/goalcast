@@ -841,6 +841,26 @@
       }
     },
     {
+      "api_match_id": "545926",
+      "league": "Liga Portugal",
+      "home_team": "Rio Ave FC",
+      "away_team": "CF Estrela da Amadora",
+      "match_date": "2026-03-15T18:00:00+00:00",
+      "home_elo": 1452.20996094,
+      "away_elo": 1407.18615723,
+      "status": "finished",
+      "actual_home_goals": 2,
+      "actual_away_goals": 1,
+      "prediction": {
+        "predicted_home_goals": 2,
+        "predicted_away_goals": 0,
+        "home_win_prob": 0.529,
+        "draw_prob": 0.243,
+        "away_win_prob": 0.226,
+        "confidence": "medium"
+      }
+    },
+    {
       "api_match_id": "540633",
       "league": "Bundesliga",
       "home_team": "VfB Stuttgart",
@@ -1258,6 +1278,26 @@
         "draw_prob": 0.242,
         "away_win_prob": 0.222,
         "confidence": "medium"
+      }
+    },
+    {
+      "api_match_id": "545935",
+      "league": "Liga Portugal",
+      "home_team": "CF Estrela da Amadora",
+      "away_team": "Casa Pia AC",
+      "match_date": "2026-03-20T20:15:00+00:00",
+      "home_elo": 1407.18615723,
+      "away_elo": 1456.8248291,
+      "status": "finished",
+      "actual_home_goals": 4,
+      "actual_away_goals": 0,
+      "prediction": {
+        "predicted_home_goals": 1,
+        "predicted_away_goals": 1,
+        "home_win_prob": 0.451,
+        "draw_prob": 0.259,
+        "away_win_prob": 0.289,
+        "confidence": "low"
       }
     },
     {
@@ -2181,6 +2221,26 @@
       }
     },
     {
+      "api_match_id": "545944",
+      "league": "Liga Portugal",
+      "home_team": "CD Nacional",
+      "away_team": "CF Estrela da Amadora",
+      "match_date": "2026-04-04T00:00:00+00:00",
+      "home_elo": 1426.30627441,
+      "away_elo": 1407.18615723,
+      "status": "upcoming",
+      "actual_home_goals": null,
+      "actual_away_goals": null,
+      "prediction": {
+        "predicted_home_goals": 2,
+        "predicted_away_goals": 1,
+        "home_win_prob": 0.507,
+        "draw_prob": 0.249,
+        "away_win_prob": 0.242,
+        "confidence": "medium"
+      }
+    },
+    {
       "api_match_id": "544510",
       "league": "La Liga",
       "home_team": "Real Sociedad de F\u00fatbol",
@@ -2681,5 +2741,5 @@
       }
     }
   ],
-  "exported_at": "2026-03-23T14:02:56.288820"
+  "exported_at": "2026-03-23T14:32:27.354947"
 }
