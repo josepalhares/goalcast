@@ -1,4 +1,5 @@
 """Football-data.org v4 API client for fetching match data."""
+import asyncio
 import httpx
 import os
 from typing import List, Dict
@@ -21,7 +22,7 @@ COMPETITIONS = {
     # EL (Europa League) not available on free tier
 }
 
-LEAGUE_NAMES = dict(COMPETITIONS)  # Kept for backward compat with routes.py
+LEAGUE_NAMES = dict(COMPETITIONS)
 
 _api_request_count = 0
 
@@ -38,9 +39,7 @@ def get_request_count() -> int:
 
 
 def clear_cache():
-    """No-op — football-data.org doesn't need client-side caching (single request per fetch)."""
     pass
-
 
 
 def _normalize_match(match: dict) -> Dict:
@@ -71,49 +70,72 @@ def _normalize_match(match: dict) -> Dict:
     }
 
 
-async def _fetch_all_matches(date_from: str, date_to: str) -> List[Dict]:
-    """Fetch ALL matches (any status) for a date range. One API call."""
+async def _fetch_competition_matches(
+    client: httpx.AsyncClient, headers: dict, comp_code: str,
+    date_from: str, date_to: str,
+) -> List[Dict]:
+    """Fetch matches for a single competition in a date range."""
     global _api_request_count
-    api_key = get_api_key()
 
-    url = f"{API_BASE}/matches"
-    headers = {"X-Auth-Token": api_key}
+    url = f"{API_BASE}/competitions/{comp_code}/matches"
     params = {"dateFrom": date_from, "dateTo": date_to}
 
     try:
         _api_request_count += 1
         req_num = _api_request_count
 
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            data = response.json()
+        response = await client.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json()
+        matches = data.get("matches", [])
 
-        all_matches = data.get("matches", [])
-        comp_codes = set(COMPETITIONS.keys())
-        filtered = [m for m in all_matches if m.get("competition", {}).get("code") in comp_codes]
-
-        logger.info(f"[API #{req_num}] {date_from} to {date_to}: {len(all_matches)} total, {len(filtered)} target")
-        return filtered
+        logger.info(f"[API #{req_num}] {comp_code} {date_from}→{date_to}: {len(matches)} matches")
+        return matches
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"[API] HTTP {e.response.status_code}: {e.response.text[:200]}")
+        logger.error(f"[API] {comp_code} HTTP {e.response.status_code}: {e.response.text[:200]}")
         return []
     except Exception as e:
-        logger.error(f"[API] Error: {e}")
+        logger.error(f"[API] {comp_code} error: {e}")
         return []
+
+
+async def _fetch_all_competitions(date_from: str, date_to: str) -> List[Dict]:
+    """Fetch matches for ALL competitions in a date range.
+    One API call per competition — gives complete data unlike general /matches endpoint.
+    Rate limit: 10 req/min on free tier, we do 7 sequentially with small delays.
+    """
+    api_key = get_api_key()
+    headers = {"X-Auth-Token": api_key}
+    all_matches = []
+    seen_ids = set()
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for comp_code in COMPETITIONS:
+            matches = await _fetch_competition_matches(
+                client, headers, comp_code, date_from, date_to
+            )
+            for m in matches:
+                if m["id"] not in seen_ids:
+                    seen_ids.add(m["id"])
+                    all_matches.append(m)
+            # Free tier: 10 requests/minute. Space calls ~7s apart to stay safe.
+            await asyncio.sleep(7)
+
+    logger.info(f"All competitions {date_from}→{date_to}: {len(all_matches)} total matches")
+    return all_matches
 
 
 async def _fetch_range_chunked(date_from: str, date_to: str) -> List[Dict]:
-    """Fetch matches in 10-day chunks (football-data.org free tier limit)."""
+    """Fetch matches in 10-day chunks across all competitions."""
     from_dt = datetime.strptime(date_from, "%Y-%m-%d")
     to_dt = datetime.strptime(date_to, "%Y-%m-%d")
     all_matches = []
     seen_ids = set()
 
     while from_dt <= to_dt:
-        chunk_end = min(from_dt + timedelta(days=9), to_dt)  # Max 10 days
-        chunk = await _fetch_all_matches(
+        chunk_end = min(from_dt + timedelta(days=9), to_dt)
+        chunk = await _fetch_all_competitions(
             from_dt.strftime("%Y-%m-%d"),
             chunk_end.strftime("%Y-%m-%d"),
         )
