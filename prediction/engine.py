@@ -1,15 +1,18 @@
-"""Dixon-Coles prediction engine with Elo prior and per-league calibration.
+"""Dixon-Coles prediction engine with xG blending and Elo fallback.
 
 The Dixon-Coles model extends Poisson regression by:
 1. Estimating per-team attack/defense strength parameters from historical goals
 2. Applying a low-scoring correction (rho) that boosts 0-0, 1-0, 0-1, 1-1 draws
 3. Using home advantage as a fitted parameter
 4. Applying time-decay so recent matches matter more
+5. Optionally blending with Understat xG data (70% DC, 30% xG)
 
 When fewer than 20 finished matches exist, falls back to Elo-based Poisson.
 """
+import json
 import math
 import numpy as np
+from pathlib import Path
 from scipy.stats import poisson
 from scipy.optimize import minimize
 from typing import Tuple, Dict, Optional
@@ -26,7 +29,10 @@ MAX_XG = 3.5
 # ── Dixon-Coles fitted model (populated by fit_model) ──
 _dc_model: Optional[dict] = None
 _calibration: Optional[dict] = None
+_xg_data: Optional[dict] = None  # team_name → {xg_for_per_match, xg_against_per_match, ...}
 MIN_MATCHES_FOR_DC = 20
+XG_DATA_PATH = Path(__file__).parent.parent / "data" / "xg_data.json"
+DC_WEIGHT = 0.7  # 70% Dixon-Coles, 30% xG when both available
 
 
 # ─── Dixon-Coles core math ────────────────────────────────────
@@ -199,6 +205,35 @@ def set_calibration(cal: Optional[dict]) -> None:
     _calibration = cal
 
 
+def load_xg_data() -> int:
+    """Load xG data from data/xg_data.json if it exists. Returns team count."""
+    global _xg_data
+    if not XG_DATA_PATH.exists():
+        logger.info("No xg_data.json found — xG blending disabled")
+        return 0
+
+    try:
+        raw = json.loads(XG_DATA_PATH.read_text())
+        teams = raw.get("teams", [])
+        _xg_data = {}
+        for t in teams:
+            _xg_data[t["team_name"]] = t
+        scraped = raw.get("scraped_at", "unknown")
+        logger.info(f"Loaded xG data: {len(_xg_data)} teams (scraped {scraped})")
+        return len(_xg_data)
+    except Exception as e:
+        logger.error(f"Failed to load xg_data.json: {e}")
+        _xg_data = None
+        return 0
+
+
+def _get_xg_for_team(team_name: str) -> Optional[dict]:
+    """Look up xG data for a team."""
+    if not _xg_data:
+        return None
+    return _xg_data.get(team_name)
+
+
 def _elo_expected_goals(home_elo: float, away_elo: float, league: str = "") -> Tuple[float, float]:
     """Elo-based xG fallback when Dixon-Coles can't predict a team."""
     elo_diff = (home_elo - away_elo + ELO_HOME_ADVANTAGE) / 400
@@ -290,7 +325,7 @@ def predict_match(home_xg: float, away_xg: float, rho: float = 0.0, max_goals: i
 def generate_prediction(
     home_team: str, away_team: str, home_elo: float, away_elo: float, league: str = ""
 ) -> Dict:
-    """Generate prediction using Dixon-Coles if available, else Elo fallback."""
+    """Generate prediction: Dixon-Coles + xG blend > Dixon-Coles > Elo fallback."""
     rho = 0.0
     model_used = "elo"
 
@@ -303,12 +338,32 @@ def generate_prediction(
         home_adv = _dc_model["home_adv"]
         rho = _dc_model["rho"]
 
-        home_xg = max(0.4, math.exp(att_h - def_a + home_adv))
-        away_xg = max(0.3, math.exp(att_a - def_h))
+        dc_home_xg = max(0.4, math.exp(att_h - def_a + home_adv))
+        dc_away_xg = max(0.3, math.exp(att_a - def_h))
+        dc_home_xg = min(dc_home_xg, MAX_XG)
+        dc_away_xg = min(dc_away_xg, MAX_XG)
 
-        home_xg = min(home_xg, MAX_XG)
-        away_xg = min(away_xg, MAX_XG)
-        model_used = "dc"
+        # Try to blend with xG data
+        home_xg_data = _get_xg_for_team(home_team)
+        away_xg_data = _get_xg_for_team(away_team)
+
+        if home_xg_data and away_xg_data:
+            # Blend: 70% Dixon-Coles, 30% xG-based expected goals
+            # xG-based: home team's xG per home match vs away team's xGA per away match
+            xg_home = (home_xg_data.get("xg_for_per_match", dc_home_xg) +
+                       away_xg_data.get("xg_against_per_match", dc_home_xg)) / 2
+            xg_away = (away_xg_data.get("xg_for_per_match", dc_away_xg) +
+                       home_xg_data.get("xg_against_per_match", dc_away_xg)) / 2
+
+            home_xg = DC_WEIGHT * dc_home_xg + (1 - DC_WEIGHT) * xg_home
+            away_xg = DC_WEIGHT * dc_away_xg + (1 - DC_WEIGHT) * xg_away
+            home_xg = min(max(0.4, home_xg), MAX_XG)
+            away_xg = min(max(0.3, away_xg), MAX_XG)
+            model_used = "dc+xg"
+        else:
+            home_xg = dc_home_xg
+            away_xg = dc_away_xg
+            model_used = "dc"
     else:
         # Elo fallback
         home_xg, away_xg = _elo_expected_goals(home_elo, away_elo, league)

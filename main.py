@@ -18,6 +18,7 @@ except ImportError:
 
 from api.routes import router, do_refresh
 from db import init_db, load_seed_if_empty
+from prediction.engine import load_xg_data
 
 # Configure logging
 logging.basicConfig(
@@ -38,6 +39,11 @@ async def lifespan(app: FastAPI):
         logger.info(f"Seeded DB with {loaded} matches from seed.json")
     else:
         logger.info("Database initialized")
+
+    # Load xG data if available
+    xg_count = load_xg_data()
+    if xg_count:
+        logger.info(f"xG data loaded: {xg_count} teams")
 
     # Run startup refresh in background (don't block server startup)
     async def _startup_refresh():
