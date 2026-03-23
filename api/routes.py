@@ -229,24 +229,39 @@ def _db_row_to_response(row: dict) -> Optional[dict]:
     return {"match": match, "prediction": prediction}
 
 
+# ─── Response cache ────────────────────────────────────────────
+
+import time as _time
+
+_matches_cache: Optional[list] = None
+_matches_cache_time: float = 0
+_CACHE_TTL = 60  # seconds
+
+
+def _invalidate_matches_cache():
+    global _matches_cache, _matches_cache_time
+    _matches_cache = None
+    _matches_cache_time = 0
+
+
 # ─── Endpoints ────────────────────────────────────────────────
 
 
 @router.get("/matches")
-async def get_matches(status: Optional[str] = None, days_back: Optional[int] = None) -> list:
-    """Serve all matches from the database. Fast, no API calls.
-    Optional filters: ?status=upcoming or ?status=finished or ?days_back=30
-    """
-    rows = get_all_matches_from_db()
-    results = []
-    for row in rows:
-        item = _db_row_to_response(row)
-        if item:
-            if status and item["match"]["status"] != status:
-                continue
-            results.append(item)
-    logger.info(f"Serving {len(results)} matches from DB")
-    return results
+async def get_matches(status: Optional[str] = None) -> list:
+    """Serve all matches from DB. Cached for 60 seconds."""
+    global _matches_cache, _matches_cache_time
+
+    now = _time.time()
+    if _matches_cache is None or (now - _matches_cache_time) > _CACHE_TTL:
+        rows = get_all_matches_from_db()
+        _matches_cache = [_db_row_to_response(row) for row in rows]
+        _matches_cache = [m for m in _matches_cache if m is not None]
+        _matches_cache_time = now
+
+    if status:
+        return [m for m in _matches_cache if m["match"]["status"] == status]
+    return _matches_cache
 
 
 async def do_refresh(source: str = "manual") -> dict:
@@ -265,15 +280,6 @@ async def do_refresh(source: str = "manual") -> dict:
     _elo_cache = {}
 
     elo_ratings = await _ensure_elo_cache()
-
-    # Fit Dixon-Coles from existing finished matches BEFORE generating predictions
-    with get_db() as conn:
-        finished_rows = conn.execute("""
-            SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
-            FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
-        """).fetchall()
-    dc_model = fit_model([dict(r) for r in finished_rows])
-    set_dc_model(dc_model)
 
     before = get_request_count()
 
@@ -395,6 +401,9 @@ async def do_refresh(source: str = "manual") -> dict:
         f"{skipped_no_elo} skipped (no Elo), {total_in_db} total in DB, {api_calls} API calls"
     )
 
+    # Invalidate response cache so next request gets fresh data
+    _invalidate_matches_cache()
+
     # Auto-export seed after every refresh
     try:
         save_seed_file()
@@ -417,7 +426,8 @@ async def refresh_data() -> dict:
 
 @router.post("/refresh-if-stale")
 async def refresh_if_stale() -> dict:
-    """Auto-refresh on page load if last refresh was more than 30 minutes ago."""
+    """Non-blocking stale check — fires refresh in background, returns immediately."""
+    import asyncio
     last = get_last_refresh()
     if last:
         from datetime import datetime as dt
@@ -425,10 +435,19 @@ async def refresh_if_stale() -> dict:
             last_dt = dt.fromisoformat(last)
             age_mins = (dt.utcnow() - last_dt).total_seconds() / 60
             if age_mins < 30:
-                return {"skipped": True, "age_minutes": round(age_mins, 1), "total_in_db": get_match_count()}
+                return {"skipped": True, "age_minutes": round(age_mins, 1)}
         except Exception:
             pass
-    return await do_refresh(source="auto-stale")
+
+    # Fire refresh in background — don't block the response
+    async def _bg():
+        try:
+            await do_refresh(source="auto-stale")
+        except Exception as e:
+            logger.error(f"Background stale refresh failed: {e}")
+
+    asyncio.create_task(_bg())
+    return {"triggered": True, "message": "Refresh started in background"}
 
 
 @router.get("/cron-refresh")

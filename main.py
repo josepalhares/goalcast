@@ -17,8 +17,8 @@ except ImportError:
     pass  # python-dotenv not required in production
 
 from api.routes import router, do_refresh
-from db import init_db, load_seed_if_empty
-from prediction.engine import load_xg_data
+from db import init_db, load_seed_if_empty, get_db
+from prediction.engine import load_xg_data, fit_model, set_dc_model
 
 # Configure logging
 logging.basicConfig(
@@ -44,6 +44,17 @@ async def lifespan(app: FastAPI):
     xg_count = load_xg_data()
     if xg_count:
         logger.info(f"xG data loaded: {xg_count} teams")
+
+    # Pre-fit Dixon-Coles from seed data so predictions work immediately
+    with get_db() as conn:
+        finished = conn.execute("""
+            SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
+            FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
+        """).fetchall()
+    if finished:
+        dc = fit_model([dict(r) for r in finished])
+        set_dc_model(dc)
+        logger.info(f"Dixon-Coles pre-fitted from {len(finished)} seed matches")
 
     # Run startup refresh in background (don't block server startup)
     async def _startup_refresh():
