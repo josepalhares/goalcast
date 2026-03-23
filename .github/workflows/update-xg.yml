@@ -1,0 +1,30 @@
+name: Update team strength data
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Every Monday at 8am UTC
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  update-xg:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install httpx python-dotenv
+
+      - name: Fetch team strength data
+        env:
+          FOOTBALL_DATA_KEY: ${{ secrets.FOOTBALL_DATA_KEY }}
+        run: python3 scripts/scrape_xg.py
+
+      - name: Auto-commit if changed
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "data: auto-update team strengths"
+          file_pattern: data/xg_data.json

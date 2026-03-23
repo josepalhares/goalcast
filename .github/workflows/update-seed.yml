@@ -1,0 +1,23 @@
+name: Update seed from production
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Every day at 6am UTC
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  update-seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Export seed from production
+        run: |
+          curl -s https://goalcast-production.up.railway.app/api/export | python3 -m json.tool > data/seed.json
+          echo "Matches in seed: $(python3 -c "import json; print(len(json.load(open('data/seed.json'))['matches']))")"
+
+      - name: Auto-commit if changed
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "data: auto-update seed from production"
+          file_pattern: data/seed.json
