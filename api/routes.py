@@ -1,5 +1,5 @@
 """FastAPI route handlers for GoalCast."""
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from typing import List, Dict, Optional
 from datetime import datetime
 import logging
@@ -9,7 +9,7 @@ from api.club_elo import fetch_elo_ratings
 from api.football_api import fetch_upcoming_fixtures, fetch_recent_results, LEAGUE_NAMES, get_request_count, clear_cache
 from api.espn_api import fetch_espn_matches
 from prediction.engine import generate_prediction, set_calibration as set_engine_calibration, fit_model, set_dc_model, log_accuracy_report
-from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count, get_last_refresh, set_last_refresh, export_db_to_dict, save_seed_file, calculate_calibration, get_calibration
+from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count, get_last_refresh, set_last_refresh, export_db_to_dict, save_seed_file, calculate_calibration, get_calibration, save_user_prediction, delete_user_prediction, get_user_predictions
 
 logger = logging.getLogger(__name__)
 
@@ -249,8 +249,8 @@ def _invalidate_matches_cache():
 
 
 @router.get("/matches")
-async def get_matches(status: Optional[str] = None) -> list:
-    """Serve all matches from DB. Cached for 60 seconds."""
+async def get_matches(request: Request, status: Optional[str] = None) -> list:
+    """Serve all matches from DB with user predictions if logged in."""
     global _matches_cache, _matches_cache_time
 
     now = _time.time()
@@ -260,9 +260,27 @@ async def get_matches(status: Optional[str] = None) -> list:
         _matches_cache = [m for m in _matches_cache if m is not None]
         _matches_cache_time = now
 
+    result = _matches_cache
     if status:
-        return [m for m in _matches_cache if m["match"]["status"] == status]
-    return _matches_cache
+        result = [m for m in result if m["match"]["status"] == status]
+
+    # Attach user predictions if logged in
+    user = request.session.get("user")
+    if user:
+        from db import get_user_predictions as _gup
+        user_row = None
+        with get_db() as conn:
+            user_row = conn.execute("SELECT id FROM users WHERE email = ?", (user["email"],)).fetchone()
+        if user_row:
+            up = _gup(user_row["id"])
+            # Attach to each match
+            result = [dict(m) for m in result]  # shallow copy
+            for m in result:
+                mid = m["match"]["api_match_id"]
+                if mid in up:
+                    m["user_prediction"] = up[mid]
+
+    return result
 
 
 async def do_refresh(source: str = "manual") -> dict:
@@ -490,19 +508,40 @@ async def save_export() -> dict:
 
 
 @router.post("/predictions")
-async def save_prediction(data: dict) -> dict:
+async def save_prediction(request: Request, data: dict) -> dict:
     match_id = data.get("match_id")
     home = data.get("home")
     away = data.get("away")
     if match_id is None or home is None or away is None:
         return {"error": "match_id, home, away required"}
-    logger.info(f"User prediction saved: match {match_id} -> {home}-{away}")
-    return {"status": "saved", "match_id": match_id, "home": home, "away": away}
+
+    # Save server-side if logged in
+    user = request.session.get("user")
+    if user:
+        with get_db() as conn:
+            user_row = conn.execute("SELECT id FROM users WHERE email = ?", (user["email"],)).fetchone()
+        if user_row:
+            save_user_prediction(match_id, user_row["id"], int(home), int(away))
+            logger.info(f"User prediction saved (DB): {user['email']} match {match_id} -> {home}-{away}")
+            return {"status": "saved", "match_id": match_id, "home": home, "away": away, "stored": "server"}
+
+    # Not logged in — frontend handles localStorage
+    logger.info(f"User prediction saved (localStorage): match {match_id} -> {home}-{away}")
+    return {"status": "saved", "match_id": match_id, "home": home, "away": away, "stored": "local"}
 
 
 @router.delete("/predictions/{match_id}")
-async def delete_prediction(match_id: str) -> dict:
-    logger.info(f"User prediction deleted: match {match_id}")
+async def delete_pred(request: Request, match_id: str) -> dict:
+    user = request.session.get("user")
+    if user:
+        with get_db() as conn:
+            user_row = conn.execute("SELECT id FROM users WHERE email = ?", (user["email"],)).fetchone()
+        if user_row:
+            delete_user_prediction(match_id, user_row["id"])
+            logger.info(f"User prediction deleted (DB): {user['email']} match {match_id}")
+            return {"status": "deleted", "match_id": match_id}
+
+    logger.info(f"User prediction deleted (localStorage): match {match_id}")
     return {"status": "deleted", "match_id": match_id}
 
 

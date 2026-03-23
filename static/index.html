@@ -556,10 +556,14 @@
                     if (up) this.userPredictions = JSON.parse(up);
                 } catch (e) {}
 
-                // Fetch current user (non-blocking)
-                fetch('/auth/me').then(r => r.ok ? r.json() : null).then(d => {
-                    if (d && d.user) this.currentUser = d.user;
-                }).catch(() => {});
+                // Fetch current user (blocking — needed before loadData for server predictions)
+                try {
+                    const authRes = await fetch('/auth/me');
+                    if (authRes.ok) {
+                        const authData = await authRes.json();
+                        if (authData && authData.user) this.currentUser = authData.user;
+                    }
+                } catch (e) {}
 
                 await this.loadData();
 
@@ -689,7 +693,14 @@
             _initUserPredictions() {
                 this.allMatches.forEach(item => {
                     const key = this.getMatchKey(item.match);
-                    if (!this.userPredictions[key]) this.userPredictions[key] = { home: null, away: null };
+
+                    // If logged in and server has a prediction, use it
+                    if (this.currentUser && item.user_prediction) {
+                        this.userPredictions[key] = { home: item.user_prediction.home, away: item.user_prediction.away };
+                        this.savedPredictions[key] = true;
+                    } else if (!this.userPredictions[key]) {
+                        this.userPredictions[key] = { home: null, away: null };
+                    }
                 });
             },
 
@@ -725,22 +736,42 @@
                 const p = this.userPredictions[key];
                 if (p.home === null || p.home === '' || p.away === null || p.away === '') return false;
                 this.savedPredictions[key] = true;
+
+                // Save to server
+                fetch('/api/predictions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ match_id: key, home: p.home, away: p.away }),
+                }).catch(() => {});
+
+                // Also persist to localStorage as fallback
                 this._persistToStorage();
-                console.log(`Saved: ${match.home_team} ${p.home}-${p.away} ${match.away_team}`);
                 return true;
             },
 
             saveAll() {
                 let count = 0;
+                const toSave = [];
                 this.allMatches.forEach(item => {
                     const key = this.getMatchKey(item.match);
-                    if (this.savedPredictions[key]) return; // already saved
+                    if (this.savedPredictions[key]) return;
                     const p = this.userPredictions[key];
                     if (p && p.home !== null && p.home !== '' && p.away !== null && p.away !== '') {
                         this.savedPredictions[key] = true;
+                        toSave.push({ match_id: key, home: p.home, away: p.away });
                         count++;
                     }
                 });
+
+                // Save all to server
+                for (const pred of toSave) {
+                    fetch('/api/predictions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(pred),
+                    }).catch(() => {});
+                }
+
                 this._persistToStorage();
                 if (count > 0) {
                     this.showToast(`Saved ${count} prediction${count > 1 ? 's' : ''}`);

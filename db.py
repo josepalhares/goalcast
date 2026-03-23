@@ -101,6 +101,16 @@ def init_db() -> None:
             conn.commit()
             logger.info("Added confidence column to predictions table")
 
+    # Add user_id column if missing
+    try:
+        with get_db() as conn:
+            conn.execute("SELECT user_id FROM predictions LIMIT 1")
+    except sqlite3.OperationalError:
+        with get_db() as conn:
+            conn.execute("ALTER TABLE predictions ADD COLUMN user_id INTEGER")
+            conn.commit()
+            logger.info("Added user_id column to predictions table")
+
 
 @contextmanager
 def get_db() -> Generator[sqlite3.Connection, None, None]:
@@ -212,6 +222,54 @@ def upsert_ai_prediction(
         """, (match_id, predicted_home_goals, predicted_away_goals,
               home_win_prob, draw_prob, away_win_prob, confidence))
         conn.commit()
+
+
+def save_user_prediction(match_api_id: str, user_id: int, home: int, away: int) -> bool:
+    """Save or update a user prediction. Returns True if saved."""
+    with get_db() as conn:
+        # Find the match row ID
+        row = conn.execute("SELECT id FROM matches WHERE api_match_id = ?", (match_api_id,)).fetchone()
+        if not row:
+            return False
+        match_id = row["id"]
+
+        # Upsert: delete old prediction for this user+match, then insert
+        conn.execute(
+            "DELETE FROM predictions WHERE match_id = ? AND source = 'user' AND user_id = ?",
+            (match_id, user_id)
+        )
+        conn.execute("""
+            INSERT INTO predictions (match_id, source, predicted_home_goals, predicted_away_goals,
+                                     home_win_prob, draw_prob, away_win_prob, user_id)
+            VALUES (?, 'user', ?, ?, 0, 0, 0, ?)
+        """, (match_id, home, away, user_id))
+        conn.commit()
+        return True
+
+
+def delete_user_prediction(match_api_id: str, user_id: int) -> bool:
+    """Delete a user prediction. Returns True if deleted."""
+    with get_db() as conn:
+        row = conn.execute("SELECT id FROM matches WHERE api_match_id = ?", (match_api_id,)).fetchone()
+        if not row:
+            return False
+        conn.execute(
+            "DELETE FROM predictions WHERE match_id = ? AND source = 'user' AND user_id = ?",
+            (row["id"], user_id)
+        )
+        conn.commit()
+        return True
+
+
+def get_user_predictions(user_id: int) -> dict:
+    """Get all predictions for a user. Returns {api_match_id: {home, away}}."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT m.api_match_id, p.predicted_home_goals as home, p.predicted_away_goals as away
+            FROM predictions p JOIN matches m ON m.id = p.match_id
+            WHERE p.source = 'user' AND p.user_id = ?
+        """, (user_id,)).fetchall()
+    return {r["api_match_id"]: {"home": r["home"], "away": r["away"]} for r in rows}
 
 
 def get_all_matches_from_db() -> list[dict]:
