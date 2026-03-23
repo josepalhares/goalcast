@@ -424,32 +424,6 @@ async def refresh_data() -> dict:
     return await do_refresh(source="manual")
 
 
-@router.post("/refresh-if-stale")
-async def refresh_if_stale() -> dict:
-    """Non-blocking stale check — fires refresh in background, returns immediately."""
-    import asyncio
-    last = get_last_refresh()
-    if last:
-        from datetime import datetime as dt
-        try:
-            last_dt = dt.fromisoformat(last)
-            age_mins = (dt.utcnow() - last_dt).total_seconds() / 60
-            if age_mins < 30:
-                return {"skipped": True, "age_minutes": round(age_mins, 1)}
-        except Exception:
-            pass
-
-    # Fire refresh in background — don't block the response
-    async def _bg():
-        try:
-            await do_refresh(source="auto-stale")
-        except Exception as e:
-            logger.error(f"Background stale refresh failed: {e}")
-
-    asyncio.create_task(_bg())
-    return {"triggered": True, "message": "Refresh started in background"}
-
-
 @router.get("/cron-refresh")
 async def cron_refresh() -> dict:
     """External cron endpoint — triggers refresh if last was >3 hours ago.
