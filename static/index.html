@@ -544,12 +544,9 @@
             async init() {
                 const saved = localStorage.getItem('darkMode');
                 this.darkMode = saved !== null ? saved === 'true' : false;
-                try {
-                    const sp = localStorage.getItem('savedPredictions');
-                    if (sp) this.savedPredictions = JSON.parse(sp);
-                    const up = localStorage.getItem('userPredictions');
-                    if (up) this.userPredictions = JSON.parse(up);
-                } catch (e) {}
+                // Predictions are server-only for logged-in users; clear any stale localStorage data
+                localStorage.removeItem('savedPredictions');
+                localStorage.removeItem('userPredictions');
 
                 // Default date range: last 7 days
                 const todayStr = new Date().toISOString().slice(0, 10);
@@ -706,10 +703,16 @@
             },
 
             _initUserPredictions() {
+                // When logged in, server is the sole source of truth — discard any stale localStorage state
+                if (this.currentUser) {
+                    this.savedPredictions = {};
+                    this.userPredictions = {};
+                    localStorage.removeItem('savedPredictions');
+                    localStorage.removeItem('userPredictions');
+                }
+
                 this.allMatches.forEach(item => {
                     const key = this.getMatchKey(item.match);
-
-                    // If logged in and server has a prediction, use it
                     if (this.currentUser && item.user_prediction) {
                         this.userPredictions[key] = { home: item.user_prediction.home, away: item.user_prediction.away };
                         this.savedPredictions[key] = true;
@@ -754,50 +757,75 @@
                 const key = this.getMatchKey(match);
                 const p = this.userPredictions[key];
                 if (p.home === null || p.home === '' || p.away === null || p.away === '') return false;
+
+                // Optimistic update — will be rolled back on error
                 this.savedPredictions[key] = true;
 
-                // Save to server
                 fetch('/api/predictions', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
                     body: JSON.stringify({ match_id: key, home: p.home, away: p.away }),
-                }).catch(() => {});
+                }).then(r => {
+                    if (!r.ok) {
+                        delete this.savedPredictions[key];
+                        if (r.status === 401) {
+                            this.currentUser = null;
+                            this.showToast('Session expired — please sign in again');
+                        } else {
+                            this.showToast('Save failed — please try again');
+                        }
+                    }
+                }).catch(() => {
+                    delete this.savedPredictions[key];
+                    this.showToast('Save failed — check your connection');
+                });
 
-                // Also persist to localStorage as fallback
-                this._persistToStorage();
                 return true;
             },
 
             saveAll() {
                 if (!this.requireAuth()) return;
-                let count = 0;
                 const toSave = [];
                 this.allMatches.forEach(item => {
                     const key = this.getMatchKey(item.match);
                     if (this.savedPredictions[key]) return;
                     const p = this.userPredictions[key];
                     if (p && p.home !== null && p.home !== '' && p.away !== null && p.away !== '') {
-                        this.savedPredictions[key] = true;
+                        this.savedPredictions[key] = true; // optimistic
                         toSave.push({ match_id: key, home: p.home, away: p.away });
-                        count++;
                     }
                 });
 
-                // Save all to server
-                for (const pred of toSave) {
+                if (toSave.length === 0) {
+                    this.showToast('No new predictions to save');
+                    return;
+                }
+
+                const saves = toSave.map(pred =>
                     fetch('/api/predictions', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
+                        credentials: 'same-origin',
                         body: JSON.stringify(pred),
-                    }).catch(() => {});
-                }
+                    }).then(r => {
+                        if (!r.ok) {
+                            delete this.savedPredictions[pred.match_id];
+                            if (r.status === 401) this.currentUser = null;
+                            return false;
+                        }
+                        return true;
+                    }).catch(() => { delete this.savedPredictions[pred.match_id]; return false; })
+                );
 
-                this._persistToStorage();
-                if (count > 0) {
-                    this.showToast(`Saved ${count} prediction${count > 1 ? 's' : ''}`);
-                } else {
-                    this.showToast('No new predictions to save');
-                }
+                Promise.all(saves).then(results => {
+                    const saved = results.filter(Boolean).length;
+                    if (this.currentUser === null) {
+                        this.showToast('Session expired — please sign in again');
+                    } else {
+                        this.showToast(`Saved ${saved} prediction${saved !== 1 ? 's' : ''}`);
+                    }
+                });
             },
 
             copyAI(item) {
@@ -837,17 +865,18 @@
                 const key = this.getMatchKey(match);
                 delete this.savedPredictions[key];
                 this.userPredictions[key] = { home: null, away: null };
-                this._persistToStorage();
-                // Call backend DELETE
                 try {
-                    await fetch(`/api/predictions/${key}`, { method: 'DELETE' });
+                    const r = await fetch(`/api/predictions/${key}`, {
+                        method: 'DELETE',
+                        credentials: 'same-origin',
+                    });
+                    if (!r.ok && r.status === 401) {
+                        this.currentUser = null;
+                        this.showToast('Session expired — please sign in again');
+                    }
                 } catch (e) {}
             },
 
-            _persistToStorage() {
-                localStorage.setItem('savedPredictions', JSON.stringify(this.savedPredictions));
-                localStorage.setItem('userPredictions', JSON.stringify(this.userPredictions));
-            },
 
             isToday(dateStr) {
                 return dateStr === new Date().toISOString().slice(0, 10);
