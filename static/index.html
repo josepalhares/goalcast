@@ -151,12 +151,6 @@
             </div>
         </div>
 
-        <!-- My predictions toggle (History + logged in only) -->
-        <button x-show="activeTab === 'history' && currentUser"
-                @click="myPredictionsOnly = !myPredictionsOnly"
-                :class="myPredictionsOnly ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'"
-                class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">My predictions</button>
-
         <!-- Date range (History tab only) -->
         <template x-if="activeTab === 'history'">
             <div class="flex items-center gap-2">
@@ -166,6 +160,12 @@
                 <input type="date" x-model="historyDateEnd" :style="darkMode ? 'color-scheme:dark' : 'color-scheme:light'" class="h-8 px-2 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs text-apple-dark dark:text-gray-300 focus:outline-none focus:border-apple-blue transition">
             </div>
         </template>
+
+        <!-- My predictions toggle (History + logged in only) -->
+        <button x-show="activeTab === 'history' && currentUser"
+                @click="myPredictionsOnly = !myPredictionsOnly"
+                :class="myPredictionsOnly ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'"
+                class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">My predictions</button>
 
         <!-- Clear filters -->
         <button x-show="hasActiveFilters" @click="clearFilters()" class="text-[11px] text-apple-blue hover:underline">Clear filters</button>
