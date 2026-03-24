@@ -105,6 +105,17 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-4 flex items-center gap-2">
         <button @click="activeTab = 'matches'" :class="activeTab === 'matches' ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'" class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">Matches</button>
         <button @click="activeTab = 'history'" :class="activeTab === 'history' ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'" class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">History</button>
+        <!-- History-specific controls -->
+        <div x-show="activeTab === 'history' && currentUser" class="flex items-center gap-2 ml-1">
+            <div class="w-px h-4 bg-gray-200 dark:bg-white/10 shrink-0"></div>
+            <button @click="myPredictionsOnly = !myPredictionsOnly"
+                    :class="myPredictionsOnly ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'"
+                    class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">My predictions</button>
+            <button @click="exportCSV()" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:border-apple-blue/30 transition">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                Export CSV
+            </button>
+        </div>
         <span class="ml-auto text-xs text-apple-gray" x-show="!loading" x-text="activeTab === 'history' ? historyStats.total + ' finished' : matchesTabData.length + '/' + allMatches.length + ' matches'"></span>
     </div>
 
@@ -328,23 +339,6 @@
 
         <!-- History Tab -->
         <div x-show="activeTab === 'history' && !loading" class="space-y-6">
-
-                <!-- History controls row -->
-                <div class="flex items-center justify-between min-h-[32px]">
-                    <template x-if="currentUser">
-                        <label class="flex items-center gap-2 cursor-pointer select-none">
-                            <input type="checkbox" x-model="myPredictionsOnly" class="rounded border-gray-300 text-apple-blue focus:ring-apple-blue/30 w-3.5 h-3.5">
-                            <span class="text-xs font-medium text-apple-gray">My predictions only</span>
-                        </label>
-                    </template>
-                    <div x-show="!currentUser"></div>
-                    <template x-if="currentUser">
-                        <button @click="exportCSV()" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:border-apple-blue/30 transition">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                            Export CSV
-                        </button>
-                    </template>
-                </div>
 
                 <!-- Score Cards -->
                 <div class="grid grid-cols-2 gap-4">
