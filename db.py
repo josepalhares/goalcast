@@ -85,6 +85,16 @@ def init_db() -> None:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS access_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE,
+                name TEXT,
+                requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'pending'
+            )
+        """)
+
         # Seed admin emails
         for email in ['jose.palhares@zendesk.com', 'josepalhares@gmail.com', 'josepalhares@hotmail.com']:
             cursor.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (email,))
@@ -110,6 +120,16 @@ def init_db() -> None:
             conn.execute("ALTER TABLE predictions ADD COLUMN user_id INTEGER")
             conn.commit()
             logger.info("Added user_id column to predictions table")
+
+    # Add last_login column to users if missing
+    try:
+        with get_db() as conn:
+            conn.execute("SELECT last_login FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        with get_db() as conn:
+            conn.execute("ALTER TABLE users ADD COLUMN last_login DATETIME")
+            conn.commit()
+            logger.info("Added last_login column to users table")
 
 
 @contextmanager
@@ -525,4 +545,89 @@ def set_last_refresh(timestamp: str) -> None:
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (timestamp,)
         )
+        conn.commit()
+
+
+# ─── Access requests ──────────────────────────────────────────
+
+def submit_access_request(email: str, name: str) -> str:
+    """Submit a new access request. Returns 'created', 'pending', 'approved', or 'denied'."""
+    email = email.lower()
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT status FROM access_requests WHERE email = ?", (email,)
+        ).fetchone()
+        if existing:
+            return existing["status"]
+        conn.execute(
+            "INSERT INTO access_requests (email, name) VALUES (?, ?)", (email, name)
+        )
+        conn.commit()
+        return "created"
+
+
+def get_access_request(email: str) -> Optional[dict]:
+    """Get a single access request by email."""
+    email = email.lower()
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM access_requests WHERE email = ?", (email,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_pending_requests() -> list:
+    """Get all pending access requests, oldest first."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM access_requests WHERE status = 'pending' ORDER BY requested_at ASC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_requests() -> list:
+    """Get all access requests (all statuses), newest first."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM access_requests ORDER BY requested_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_users() -> list:
+    """Get all registered users."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, email, name, role, created_at, last_login "
+            "FROM users ORDER BY last_login DESC NULLS LAST, created_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def approve_access_request(email: str) -> None:
+    """Add email to whitelist and mark request as approved."""
+    email = email.lower()
+    with get_db() as conn:
+        conn.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (email,))
+        conn.execute(
+            "UPDATE access_requests SET status = 'approved' WHERE email = ?", (email,)
+        )
+        conn.commit()
+
+
+def deny_access_request(email: str) -> None:
+    """Mark an access request as denied."""
+    email = email.lower()
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE access_requests SET status = 'denied' WHERE email = ?", (email,)
+        )
+        conn.commit()
+
+
+def add_email_to_whitelist(email: str) -> None:
+    """Add an email directly to the allowed_emails whitelist."""
+    email = email.lower()
+    with get_db() as conn:
+        conn.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (email,))
         conn.commit()

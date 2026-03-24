@@ -88,6 +88,9 @@
                                 <p class="text-xs font-semibold text-apple-dark dark:text-white truncate" x-text="currentUser.name"></p>
                                 <p class="text-[10px] text-apple-gray truncate" x-text="currentUser.email"></p>
                             </div>
+                            <template x-if="currentUser.role === 'admin'">
+                                <a href="/admin" class="block px-3 py-2 text-xs text-apple-blue font-medium hover:bg-apple-bg dark:hover:bg-white/5 transition">Admin panel</a>
+                            </template>
                             <a href="/auth/logout" class="block px-3 py-2 text-xs text-apple-gray hover:text-[#EF4444] hover:bg-apple-bg dark:hover:bg-white/5 transition">Sign out</a>
                         </div>
                     </div>

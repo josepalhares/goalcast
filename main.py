@@ -19,6 +19,7 @@ except ImportError:
 
 from api.routes import router, do_refresh
 from api.auth import router as auth_router, setup_oauth
+from api.admin import router as admin_router
 from db import init_db, load_seed_if_empty, get_db
 from prediction.engine import load_xg_data, fit_model, set_dc_model
 
@@ -105,6 +106,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(router)
 
 static_path = Path(__file__).parent / "static"

@@ -3,10 +3,10 @@ import os
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Form, Request, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse
 from authlib.integrations.starlette_client import OAuth
-from db import get_db
+from db import get_db, submit_access_request, get_access_request
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +49,14 @@ def _upsert_user(email: str, name: str, picture: str) -> dict:
         existing = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
         if existing:
             conn.execute(
-                "UPDATE users SET name = ?, picture_url = ? WHERE email = ?",
+                "UPDATE users SET name = ?, picture_url = ?, last_login = CURRENT_TIMESTAMP WHERE email = ?",
                 (name, picture, email)
             )
             conn.commit()
             role = existing["role"]
         else:
             conn.execute(
-                "INSERT INTO users (email, name, picture_url, role) VALUES (?, ?, ?, 'user')",
+                "INSERT INTO users (email, name, picture_url, role, last_login) VALUES (?, ?, ?, 'user', CURRENT_TIMESTAMP)",
                 (email, name, picture)
             )
             conn.commit()
@@ -106,6 +106,53 @@ LOGIN_PAGE = """<!DOCTYPE html>
 DENIED_PAGE = LOGIN_PAGE.replace("{message}", '<div class="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 text-sm mb-6">Access denied — your email is not on the invite list.<br>Contact the admin to get access.</div>')
 LOGIN_CLEAN = LOGIN_PAGE.replace("{message}", "")
 
+_REQUEST_SHELL = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoalCast — Request Access</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body {{ font-family: 'Inter', system-ui, sans-serif; }}</style>
+</head>
+<body class="bg-white min-h-screen flex items-center justify-center">
+    <div class="text-center w-80">
+        <div class="w-14 h-14 rounded-2xl bg-[#007AFF] flex items-center justify-center text-white font-bold text-2xl mx-auto mb-6">G</div>
+        <h1 class="text-2xl font-bold text-[#1D1D1F] mb-1">GoalCast</h1>
+        <p class="text-sm text-[#6E6E73] mb-8">Request access to join</p>
+        {body}
+    </div>
+</body>
+</html>"""
+
+_REQUEST_FORM = """<form method="POST" action="/auth/request-access" class="space-y-3 text-left">
+    <div>
+        <label class="text-xs font-medium text-[#6E6E73] block mb-1">Email</label>
+        <input type="email" name="email" value="{email}" readonly
+               class="w-full px-3 py-2 rounded-xl border border-[#E5E7EB] bg-[#F5F5F7] text-sm text-[#1D1D1F]">
+    </div>
+    <div>
+        <label class="text-xs font-medium text-[#6E6E73] block mb-1">Name</label>
+        <input type="text" name="name" value="{name}"
+               class="w-full px-3 py-2 rounded-xl border border-[#E5E7EB] text-sm text-[#1D1D1F] focus:outline-none focus:border-[#007AFF]">
+    </div>
+    <button type="submit"
+            class="w-full h-11 bg-[#007AFF] text-white text-sm font-semibold rounded-xl hover:bg-blue-600 transition mt-1">
+        Request Access
+    </button>
+</form>"""
+
+_REQUEST_PENDING = """<div class="bg-amber-50 border border-amber-200 text-amber-700 rounded-xl px-4 py-3 text-sm">
+    Your request is pending — check back soon.
+</div>
+<a href="/" class="block mt-4 text-xs text-[#6E6E73] hover:underline">← Back to GoalCast</a>"""
+
+_REQUEST_SUCCESS = """<div class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-4 py-3 text-sm">
+    Access requested! You'll get access once an admin approves.
+</div>
+<a href="/" class="block mt-4 text-xs text-[#6E6E73] hover:underline">← Back to GoalCast</a>"""
+
 
 # ─── Routes ──────────────────────────────────────────────────
 
@@ -144,7 +191,8 @@ async def callback(request: Request):
 
     if not _is_email_allowed(email):
         logger.warning(f"Access denied for: {email}")
-        return HTMLResponse(DENIED_PAGE)
+        request.session["pending_user"] = {"email": email, "name": name}
+        return RedirectResponse("/auth/request-access")
 
     user = _upsert_user(email, name, picture)
     request.session["user"] = user
@@ -173,3 +221,41 @@ async def me(request: Request):
 async def login_page():
     """Show the login page."""
     return HTMLResponse(LOGIN_CLEAN)
+
+
+@router.get("/request-access")
+async def request_access_page(request: Request):
+    """Show request-access form for denied users."""
+    pending = request.session.get("pending_user")
+    if not pending:
+        return RedirectResponse("/")
+
+    email = pending["email"]
+    name = pending["name"]
+    existing = get_access_request(email)
+
+    if existing and existing["status"] == "pending":
+        body = _REQUEST_PENDING
+    else:
+        body = _REQUEST_FORM.format(email=email, name=name)
+
+    return HTMLResponse(_REQUEST_SHELL.format(body=body))
+
+
+@router.post("/request-access")
+async def submit_request(
+    request: Request,
+    email: str = Form(...),
+    name: str = Form(...),
+):
+    """Handle access request form submission."""
+    result = submit_access_request(email.strip().lower(), name.strip())
+    request.session.pop("pending_user", None)
+    logger.info(f"Access request submitted: {email} ({result})")
+
+    if result in ("created", "approved", "denied"):
+        body = _REQUEST_SUCCESS
+    else:  # 'pending' — already submitted
+        body = _REQUEST_PENDING
+
+    return HTMLResponse(_REQUEST_SHELL.format(body=body))
