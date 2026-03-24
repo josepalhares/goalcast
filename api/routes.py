@@ -1,5 +1,5 @@
 """FastAPI route handlers for GoalCast."""
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from typing import List, Dict, Optional
 from datetime import datetime
 import logging
@@ -511,40 +511,38 @@ async def save_export() -> dict:
 
 @router.post("/predictions")
 async def save_prediction(request: Request, data: dict) -> dict:
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     match_id = data.get("match_id")
     home = data.get("home")
     away = data.get("away")
     if match_id is None or home is None or away is None:
         return {"error": "match_id, home, away required"}
 
-    # Save server-side if logged in
-    user = request.session.get("user")
-    if user:
-        with get_db() as conn:
-            user_row = conn.execute("SELECT id FROM users WHERE email = ?", (user["email"],)).fetchone()
-        if user_row:
-            save_user_prediction(match_id, user_row["id"], int(home), int(away))
-            logger.info(f"User prediction saved (DB): {user['email']} match {match_id} -> {home}-{away}")
-            return {"status": "saved", "match_id": match_id, "home": home, "away": away, "stored": "server"}
-
-    # Not logged in — frontend handles localStorage
-    logger.info(f"User prediction saved (localStorage): match {match_id} -> {home}-{away}")
-    return {"status": "saved", "match_id": match_id, "home": home, "away": away, "stored": "local"}
+    with get_db() as conn:
+        user_row = conn.execute("SELECT id FROM users WHERE email = ?", (user["email"],)).fetchone()
+    if user_row:
+        save_user_prediction(match_id, user_row["id"], int(home), int(away))
+        logger.info(f"User prediction saved (DB): {user['email']} match {match_id} -> {home}-{away}")
+        return {"status": "saved", "match_id": match_id, "home": home, "away": away, "stored": "server"}
+    return {"error": "User not found"}
 
 
 @router.delete("/predictions/{match_id}")
 async def delete_pred(request: Request, match_id: str) -> dict:
     user = request.session.get("user")
-    if user:
-        with get_db() as conn:
-            user_row = conn.execute("SELECT id FROM users WHERE email = ?", (user["email"],)).fetchone()
-        if user_row:
-            delete_user_prediction(match_id, user_row["id"])
-            logger.info(f"User prediction deleted (DB): {user['email']} match {match_id}")
-            return {"status": "deleted", "match_id": match_id}
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
 
-    logger.info(f"User prediction deleted (localStorage): match {match_id}")
-    return {"status": "deleted", "match_id": match_id}
+    with get_db() as conn:
+        user_row = conn.execute("SELECT id FROM users WHERE email = ?", (user["email"],)).fetchone()
+    if user_row:
+        delete_user_prediction(match_id, user_row["id"])
+        logger.info(f"User prediction deleted (DB): {user['email']} match {match_id}")
+        return {"status": "deleted", "match_id": match_id}
+    return {"error": "User not found"}
 
 
 @router.post("/accuracy")

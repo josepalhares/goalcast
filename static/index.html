@@ -93,7 +93,7 @@
                     </div>
                 </template>
                 <template x-if="!currentUser">
-                    <a href="/auth/login" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:bg-apple-bg dark:hover:bg-white/5 transition">Sign in</a>
+                    <a href="/auth/login" :class="signInPulse ? 'ring-2 ring-apple-blue bg-apple-blue/10 scale-105' : ''" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:bg-apple-bg dark:hover:bg-white/5 transition" id="signInBtn">Sign in</a>
                 </template>
             </div>
         </div>
@@ -105,7 +105,7 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-4 flex items-center gap-2">
         <button @click="activeTab = 'matches'" :class="activeTab === 'matches' ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'" class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">Matches</button>
         <button @click="activeTab = 'history'" :class="activeTab === 'history' ? 'bg-apple-blue text-white' : 'text-apple-gray hover:text-apple-dark dark:hover:text-white'" class="px-5 py-1.5 rounded-full text-sm font-semibold transition-all">History</button>
-        <span class="ml-auto text-xs text-apple-gray" x-show="!loading" x-text="(activeTab === 'matches' ? matchesTabData.length : filteredMatches.length) + '/' + allMatches.length + ' matches'"></span>
+        <span class="ml-auto text-xs text-apple-gray" x-show="!loading" x-text="activeTab === 'history' ? historyStats.total + ' finished' : matchesTabData.length + '/' + allMatches.length + ' matches'"></span>
     </div>
 
     <!-- Filter bar -->
@@ -151,25 +151,15 @@
             </div>
         </div>
 
-        <!-- Dates dropdown -->
-        <div class="relative" x-data="{ open: false }" @click.outside="open = false">
-            <button @click="open = !open" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:border-apple-blue/30 transition">
-                <span x-text="isFilterActive('dates') ? 'Dates (' + filterDates.length + ')' : 'Dates: All'"></span>
-                <svg class="w-3 h-3 text-apple-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-            </button>
-            <div x-show="open" x-transition class="absolute top-10 left-0 z-40 bg-white dark:bg-[#1a2234] border border-apple-border dark:border-white/10 rounded-xl shadow-lg p-2 w-48 max-h-60 overflow-y-auto">
-                <div class="flex gap-3 px-2 py-1 mb-1">
-                    <button @click="filterDates = [...availableDates]" class="text-[10px] font-semibold text-apple-blue hover:underline">Select All</button>
-                    <button @click="filterDates = []" class="text-[10px] font-semibold text-apple-blue hover:underline">Clear</button>
-                </div>
-                <template x-for="dt in availableDates" :key="dt">
-                    <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-apple-bg dark:hover:bg-white/5 cursor-pointer">
-                        <input type="checkbox" :value="dt" x-model="filterDates" class="rounded border-gray-300 text-apple-blue focus:ring-apple-blue/30 w-3.5 h-3.5">
-                        <span class="text-xs text-apple-dark dark:text-gray-300" x-text="formatDateShort(dt)"></span>
-                    </label>
-                </template>
+        <!-- Date range (History tab only) -->
+        <template x-if="activeTab === 'history'">
+            <div class="flex items-center gap-2">
+                <span class="text-xs text-apple-gray font-medium">From</span>
+                <input type="date" x-model="historyDateStart" :style="darkMode ? 'color-scheme:dark' : 'color-scheme:light'" class="h-8 px-2 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs text-apple-dark dark:text-gray-300 focus:outline-none focus:border-apple-blue transition">
+                <span class="text-xs text-apple-gray font-medium">to</span>
+                <input type="date" x-model="historyDateEnd" :style="darkMode ? 'color-scheme:dark' : 'color-scheme:light'" class="h-8 px-2 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs text-apple-dark dark:text-gray-300 focus:outline-none focus:border-apple-blue transition">
             </div>
-        </div>
+        </template>
 
         <!-- Clear filters -->
         <button x-show="hasActiveFilters" @click="clearFilters()" class="text-[11px] text-apple-blue hover:underline">Clear filters</button>
@@ -339,6 +329,23 @@
         <!-- History Tab -->
         <div x-show="activeTab === 'history' && !loading" class="space-y-6">
 
+                <!-- History controls row -->
+                <div class="flex items-center justify-between min-h-[32px]">
+                    <template x-if="currentUser">
+                        <label class="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" x-model="myPredictionsOnly" class="rounded border-gray-300 text-apple-blue focus:ring-apple-blue/30 w-3.5 h-3.5">
+                            <span class="text-xs font-medium text-apple-gray">My predictions only</span>
+                        </label>
+                    </template>
+                    <div x-show="!currentUser"></div>
+                    <template x-if="currentUser">
+                        <button @click="exportCSV()" class="h-8 px-3 rounded-lg border border-apple-border dark:border-white/10 bg-white dark:bg-[#1a2234] text-xs font-medium text-apple-dark dark:text-gray-300 flex items-center gap-1.5 hover:border-apple-blue/30 transition">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                            Export CSV
+                        </button>
+                    </template>
+                </div>
+
                 <!-- Score Cards -->
                 <div class="grid grid-cols-2 gap-4">
                     <!-- AI Card -->
@@ -456,10 +463,13 @@
             darkMode: false,
             toast: null,
             _toastTimer: null,
+            signInPulse: false,
+            myPredictionsOnly: false,
+            historyDateStart: '',
+            historyDateEnd: '',
             // Filters
             filterLeagues: [],
             filterTeams: [],
-            filterDates: [],
 
             get availableLeagues() {
                 const s = new Set();
@@ -471,33 +481,21 @@
                 this.allMatches.forEach(m => { s.add(m.match.home_team); s.add(m.match.away_team); });
                 return [...s].sort();
             },
-            get availableDates() {
-                const s = new Set();
-                this.allMatches.forEach(m => s.add(new Date(m.match.match_date).toISOString().slice(0,10)));
-                return [...s].sort();
-            },
             isFilterActive(type) {
-                // A filter is "active" when some (but not all/none) items are selected
                 if (type === 'leagues') return this.filterLeagues.length > 0 && this.filterLeagues.length < this.availableLeagues.length;
                 if (type === 'teams') return this.filterTeams.length > 0 && this.filterTeams.length < this.availableTeams.length;
-                if (type === 'dates') return this.filterDates.length > 0 && this.filterDates.length < this.availableDates.length;
                 return false;
             },
             get hasActiveFilters() {
-                return this.isFilterActive('leagues') || this.isFilterActive('teams') || this.isFilterActive('dates');
+                return this.isFilterActive('leagues') || this.isFilterActive('teams');
             },
             get filteredMatches() {
                 return this.allMatches.filter(item => {
-                    // Empty or full selection = no filter (show all)
                     if (this.isFilterActive('leagues')) {
                         if (!this.filterLeagues.includes(item.match.league)) return false;
                     }
                     if (this.isFilterActive('teams')) {
                         if (!this.filterTeams.includes(item.match.home_team) && !this.filterTeams.includes(item.match.away_team)) return false;
-                    }
-                    if (this.isFilterActive('dates')) {
-                        const d = new Date(item.match.match_date).toISOString().slice(0,10);
-                        if (!this.filterDates.includes(d)) return false;
                     }
                     return true;
                 });
@@ -553,6 +551,12 @@
                     if (up) this.userPredictions = JSON.parse(up);
                 } catch (e) {}
 
+                // Default date range: last 7 days
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+                this.historyDateStart = sevenDaysAgo;
+                this.historyDateEnd = todayStr;
+
                 // Fetch current user (blocking — needed before loadData for server predictions)
                 try {
                     const authRes = await fetch('/auth/me');
@@ -574,7 +578,13 @@
                 this.$watch('filterTeams', () => {
                     if (this.activeTab === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
                 });
-                this.$watch('filterDates', () => {
+                this.$watch('historyDateStart', () => {
+                    if (this.activeTab === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
+                });
+                this.$watch('historyDateEnd', () => {
+                    if (this.activeTab === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
+                });
+                this.$watch('myPredictionsOnly', () => {
                     if (this.activeTab === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
                 });
             },
@@ -588,6 +598,14 @@
                 this.toast = msg;
                 clearTimeout(this._toastTimer);
                 this._toastTimer = setTimeout(() => { this.toast = null; }, 2000);
+            },
+
+            requireAuth() {
+                if (this.currentUser) return true;
+                this.showToast('Sign in to save your predictions');
+                this.signInPulse = true;
+                setTimeout(() => { this.signInPulse = false; }, 2000);
+                return false;
             },
 
             async loadData() {
@@ -704,7 +722,10 @@
             clearFilters() {
                 this.filterLeagues = [];
                 this.filterTeams = [];
-                this.filterDates = [];
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+                this.historyDateStart = sevenDaysAgo;
+                this.historyDateEnd = todayStr;
             },
 
             formatDateShort(dateStr) {
@@ -729,6 +750,7 @@
             },
 
             saveUserPrediction(match) {
+                if (!this.requireAuth()) return false;
                 const key = this.getMatchKey(match);
                 const p = this.userPredictions[key];
                 if (p.home === null || p.home === '' || p.away === null || p.away === '') return false;
@@ -747,6 +769,7 @@
             },
 
             saveAll() {
+                if (!this.requireAuth()) return;
                 let count = 0;
                 const toSave = [];
                 this.allMatches.forEach(item => {
@@ -778,6 +801,7 @@
             },
 
             copyAI(item) {
+                if (!this.requireAuth()) return;
                 const key = this.getMatchKey(item.match);
                 this.userPredictions[key] = {
                     home: item.prediction.predicted_home_goals,
@@ -786,6 +810,7 @@
             },
 
             copyAllAIForDate(dateGroup) {
+                if (!this.requireAuth()) return;
                 let count = 0;
                 for (const leagueGroup of dateGroup.leagues) {
                     for (const item of leagueGroup.matches) {
@@ -903,6 +928,28 @@
                 return 'border-l-[3px] !border-l-[#EF4444]/40';
             },
 
+            exportCSV() {
+                const log = this.historyStats.log;
+                const headers = ['Date','League','Home Team','Away Team','Actual Home Goals','Actual Away Goals','AI Predicted Home','AI Predicted Away','User Predicted Home','User Predicted Away','AI Accuracy','User Accuracy'];
+                const rows = log.map(row => [
+                    row.date, row.league || '', row.home, row.away,
+                    row.actH, row.actA, row.aiH, row.aiA,
+                    row.userH !== null ? row.userH : '',
+                    row.userA !== null ? row.userA : '',
+                    row.aiRes, row.userRes || '',
+                ]);
+                const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+                const today = new Date().toISOString().slice(0, 10);
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `goalcast_history_${today}.csv`;
+                document.body.appendChild(a); a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                this.showToast(`Exported ${rows.length} matches`);
+            },
+
             // ── History stats (computed from filteredMatches, reactive to filters) ──
             _chartKey: 0,
             _leagueChart: null,
@@ -911,9 +958,26 @@
 
             get historyStats() {
                 const oc = (h, a) => h > a ? 'W' : (h < a ? 'L' : 'D');
-                const finished = this.filteredMatches.filter(m =>
+                let finished = this.filteredMatches.filter(m =>
                     m.match.status === 'finished' && m.match.actual_home_goals !== null && m.prediction
                 );
+
+                // Date range filter
+                if (this.historyDateStart) {
+                    finished = finished.filter(m => new Date(m.match.match_date).toISOString().slice(0, 10) >= this.historyDateStart);
+                }
+                if (this.historyDateEnd) {
+                    finished = finished.filter(m => new Date(m.match.match_date).toISOString().slice(0, 10) <= this.historyDateEnd);
+                }
+
+                // My predictions only
+                if (this.myPredictionsOnly && this.currentUser) {
+                    finished = finished.filter(m => {
+                        const key = this.getMatchKey(m.match);
+                        const up = this.savedPredictions[key] ? this.userPredictions[key] : null;
+                        return up && up.home !== null && up.away !== null;
+                    });
+                }
 
                 let aiExact = 0, aiOutcome = 0, aiMaeH = 0, aiMaeA = 0;
                 let userExact = 0, userOutcome = 0, userMaeH = 0, userMaeA = 0, userCount = 0;
@@ -967,7 +1031,7 @@
                     if (aiO) dateMap[dt].aiO++;
 
                     log.push({
-                        key: key, date: dt, home: mt.home_team, away: mt.away_team,
+                        key, date: dt, league: mt.league, home: mt.home_team, away: mt.away_team,
                         aiH, aiA, userH, userA, actH, actA,
                         aiRes: aiE ? 'exact' : (aiO ? 'close' : 'miss'), userRes
                     });
