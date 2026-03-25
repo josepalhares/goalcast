@@ -131,6 +131,18 @@ def init_db() -> None:
             conn.commit()
             logger.info("Added last_login column to users table")
 
+    # Assign orphaned user predictions (user_id=NULL) to user id=1 (the first admin)
+    with get_db() as conn:
+        orphaned = conn.execute(
+            "SELECT COUNT(*) as cnt FROM predictions WHERE source='user' AND user_id IS NULL"
+        ).fetchone()["cnt"]
+        if orphaned > 0:
+            conn.execute(
+                "UPDATE predictions SET user_id = 1 WHERE source='user' AND user_id IS NULL"
+            )
+            conn.commit()
+            logger.info(f"Migration: assigned {orphaned} orphaned user predictions to user_id=1")
+
 
 @contextmanager
 def get_db() -> Generator[sqlite3.Connection, None, None]:
