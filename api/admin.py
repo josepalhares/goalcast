@@ -170,6 +170,33 @@ def _render_page(pending: list, users: list, all_requests: list, msg: str = "") 
 
 # ─── Routes ──────────────────────────────────────────────────
 
+@router.get("/debug")
+async def debug(request: Request):
+    if not _require_admin(request):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403)
+    from db import get_db
+    with get_db() as conn:
+        users = [dict(r) for r in conn.execute(
+            "SELECT id, email, name, role, created_at, last_login FROM users ORDER BY id"
+        ).fetchall()]
+        pred_by_user = [dict(r) for r in conn.execute(
+            "SELECT user_id, COUNT(*) as count FROM predictions WHERE source='user' GROUP BY user_id ORDER BY user_id"
+        ).fetchall()]
+        null_count = conn.execute(
+            "SELECT COUNT(*) as count FROM predictions WHERE source='user' AND user_id IS NULL"
+        ).fetchone()["count"]
+        allowed = [dict(r) for r in conn.execute(
+            "SELECT email FROM allowed_emails ORDER BY email"
+        ).fetchall()]
+    return {
+        "users": users,
+        "user_predictions_by_user_id": pred_by_user,
+        "user_predictions_with_null_user_id": null_count,
+        "allowed_emails": allowed,
+    }
+
+
 @router.get("")
 async def admin_panel(request: Request, msg: str = ""):
     if not _require_admin(request):
