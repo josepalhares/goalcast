@@ -423,21 +423,30 @@ def calculate_calibration() -> Optional[dict]:
 
 
 def load_seed_if_empty() -> int:
-    """If DB has 0 matches, load from seed.json. Returns number of matches loaded."""
-    if get_match_count() > 0:
-        return 0
+    """Load from seed.json.
 
+    Users and allowed_emails are always restored (safe merge via INSERT OR IGNORE).
+    Matches and user predictions are only loaded when the DB is empty.
+    Returns number of matches loaded.
+    """
     if not SEED_PATH.exists():
         logger.info("No seed.json found, starting with empty DB")
         return 0
 
-    logger.info(f"DB is empty — loading seed from {SEED_PATH}")
     try:
         seed = json.loads(SEED_PATH.read_text())
     except Exception as e:
         logger.error(f"Failed to read seed.json: {e}")
         return 0
 
+    # Always restore users and allowed_emails on every startup (safe: INSERT OR IGNORE)
+    _seed_restore_users(seed)
+    _seed_restore_emails(seed)
+
+    if get_match_count() > 0:
+        return 0
+
+    logger.info(f"DB is empty — loading seed from {SEED_PATH}")
     loaded = 0
     with get_db() as conn:
         cursor = conn.cursor()
@@ -457,7 +466,6 @@ def load_seed_if_empty() -> int:
                         "SELECT id FROM matches WHERE api_match_id = ?",
                         (m["api_match_id"],)
                     ).fetchone()["id"]
-                    # Load AI prediction if present
                     p = m.get("prediction")
                     if p:
                         cursor.execute("""
@@ -468,39 +476,90 @@ def load_seed_if_empty() -> int:
                         """, (match_id, p["predicted_home_goals"], p["predicted_away_goals"],
                               p["home_win_prob"], p["draw_prob"], p["away_win_prob"],
                               p.get("confidence", "medium")))
-                    # Load user prediction if present
-                    up = m.get("user_prediction")
-                    if up:
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO predictions
-                                (match_id, source, predicted_home_goals, predicted_away_goals,
-                                 home_win_prob, draw_prob, away_win_prob)
-                            VALUES (?, 'user', ?, ?, 0, 0, 0)
-                        """, (match_id, up["home"], up["away"]))
             except Exception as e:
                 logger.error(f"Seed import error for {m.get('api_match_id')}: {e}")
         conn.commit()
+
+    _seed_restore_user_predictions(seed)
 
     logger.info(f"Loaded {loaded} matches from seed.json")
     return loaded
 
 
+def _seed_restore_users(seed: dict) -> None:
+    """Insert users from seed into users table (INSERT OR IGNORE — never overwrites)."""
+    users = seed.get("users", [])
+    if not users:
+        return
+    with get_db() as conn:
+        for u in users:
+            conn.execute("""
+                INSERT OR IGNORE INTO users (id, email, name, role, picture_url, created_at, last_login)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (u["id"], u["email"], u.get("name"), u.get("role", "user"),
+                  u.get("picture_url"), u.get("created_at"), u.get("last_login")))
+        conn.commit()
+    logger.info(f"Seed: restored {len(users)} users")
+
+
+def _seed_restore_emails(seed: dict) -> None:
+    """Merge allowed_emails from seed (INSERT OR IGNORE)."""
+    emails = seed.get("allowed_emails", [])
+    if not emails:
+        return
+    with get_db() as conn:
+        for email in emails:
+            conn.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (email,))
+        conn.commit()
+    logger.info(f"Seed: restored {len(emails)} allowed emails")
+
+
+def _seed_restore_user_predictions(seed: dict) -> None:
+    """Restore user predictions from top-level user_predictions array (with user_id)."""
+    user_preds = seed.get("user_predictions", [])
+    if not user_preds:
+        return
+    loaded = 0
+    with get_db() as conn:
+        for up in user_preds:
+            row = conn.execute(
+                "SELECT id FROM matches WHERE api_match_id = ?", (up["match_api_id"],)
+            ).fetchone()
+            if not row:
+                continue
+            try:
+                conn.execute("""
+                    INSERT OR IGNORE INTO predictions
+                        (match_id, source, predicted_home_goals, predicted_away_goals,
+                         home_win_prob, draw_prob, away_win_prob, user_id)
+                    VALUES (?, 'user', ?, ?, 0, 0, 0, ?)
+                """, (row["id"], up["home"], up["away"], up.get("user_id")))
+                loaded += 1
+            except Exception as e:
+                logger.error(f"Seed user prediction error {up}: {e}")
+        conn.commit()
+    logger.info(f"Seed: restored {loaded} user predictions")
+
+
 def export_db_to_dict() -> dict:
-    """Export all matches + AI predictions + user predictions as JSON."""
+    """Export all DB data as JSON for seed backup (matches, users, allowed_emails, user predictions)."""
     rows = get_all_matches_from_db()
 
-    # Also get user predictions
-    user_preds = {}
     with get_db() as conn:
-        ups = conn.execute("""
-            SELECT match_id, predicted_home_goals, predicted_away_goals
-            FROM predictions WHERE source = 'user'
+        # User predictions with user_id (authoritative format)
+        up_rows = conn.execute("""
+            SELECT m.api_match_id, p.predicted_home_goals, p.predicted_away_goals, p.user_id
+            FROM predictions p JOIN matches m ON m.id = p.match_id
+            WHERE p.source = 'user' AND p.user_id IS NOT NULL
         """).fetchall()
-        for up in ups:
-            user_preds[up["match_id"]] = {
-                "home": up["predicted_home_goals"],
-                "away": up["predicted_away_goals"],
-            }
+
+        user_rows = conn.execute(
+            "SELECT id, email, name, role, picture_url, created_at, last_login FROM users ORDER BY id"
+        ).fetchall()
+
+        email_rows = conn.execute(
+            "SELECT email FROM allowed_emails ORDER BY email"
+        ).fetchall()
 
     matches = []
     for r in rows:
@@ -525,12 +584,23 @@ def export_db_to_dict() -> dict:
                 "away_win_prob": r["away_win_prob"],
                 "confidence": r.get("confidence"),
             }
-        # Include user prediction if exists
-        up = user_preds.get(r["id"])
-        if up:
-            m["user_prediction"] = up
         matches.append(m)
-    return {"matches": matches, "exported_at": get_last_refresh() or "unknown"}
+
+    return {
+        "matches": matches,
+        "users": [dict(r) for r in user_rows],
+        "allowed_emails": [r["email"] for r in email_rows],
+        "user_predictions": [
+            {
+                "match_api_id": r["api_match_id"],
+                "user_id": r["user_id"],
+                "home": r["predicted_home_goals"],
+                "away": r["predicted_away_goals"],
+            }
+            for r in up_rows
+        ],
+        "exported_at": get_last_refresh() or "unknown",
+    }
 
 
 def save_seed_file() -> str:

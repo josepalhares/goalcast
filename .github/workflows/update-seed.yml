@@ -14,7 +14,15 @@ jobs:
       - name: Export seed from production
         run: |
           curl -s https://goalcast-production.up.railway.app/api/export | python3 -m json.tool > data/seed.json
-          echo "Matches in seed: $(python3 -c "import json; print(len(json.load(open('data/seed.json'))['matches']))")"
+          python3 -c "
+          import json
+          d = json.load(open('data/seed.json'))
+          print(f'Matches:           {len(d[\"matches\"])}')
+          print(f'Users:             {len(d.get(\"users\", []))}')
+          print(f'Allowed emails:    {len(d.get(\"allowed_emails\", []))}')
+          print(f'User predictions:  {len(d.get(\"user_predictions\", []))}')
+          print(f'Exported at:       {d.get(\"exported_at\", \"?\")}')
+          "
 
       - name: Auto-commit if changed
         uses: stefanzweifel/git-auto-commit-action@v5
