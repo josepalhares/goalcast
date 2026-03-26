@@ -8,6 +8,7 @@ from models import Match, Prediction, MatchWithPrediction
 from api.club_elo import fetch_elo_ratings
 from api.football_api import fetch_upcoming_fixtures, fetch_recent_results, LEAGUE_NAMES, get_request_count, clear_cache
 from api.espn_api import fetch_espn_matches
+from api.national_elo import get_national_elo
 from prediction.engine import generate_prediction, set_calibration as set_engine_calibration, fit_model, set_dc_model, log_accuracy_report
 from db import get_db, upsert_match, upsert_ai_prediction, get_all_matches_from_db, get_match_count, get_last_refresh, set_last_refresh, export_db_to_dict, save_seed_file, calculate_calibration, get_calibration, save_user_prediction, delete_user_prediction, get_user_predictions
 
@@ -166,6 +167,11 @@ def _find_elo(team_name: str, elo_ratings: Dict[str, float]) -> Optional[float]:
         if len(shorter) >= 4 and shorter != longer and shorter in longer and len(shorter) / len(longer) > 0.5:
             return elo
 
+    # National team fallback (ClubElo only has clubs, not national teams)
+    national = get_national_elo(team_name)
+    if national is not None:
+        return national
+
     return None
 
 
@@ -305,7 +311,7 @@ async def do_refresh(source: str = "manual") -> dict:
     upcoming_fixtures = await fetch_upcoming_fixtures(days_ahead=14)
     recent_fixtures = await fetch_recent_results(days_back=14)
 
-    # Fetch Europa League + Conference League from ESPN
+    # Fetch ESPN matches (Europa League, Conference League, international)
     espn_matches = await fetch_espn_matches()
 
     after = get_request_count()
@@ -318,7 +324,8 @@ async def do_refresh(source: str = "manual") -> dict:
     for f in all_fetched:
         lg = f["league"]["name"]
         league_counts[lg] = league_counts.get(lg, 0) + 1
-    for lg_name in list(LEAGUE_NAMES.values()) + ["Europa League", "Conference League"]:
+    from api.espn_api import COMPETITIONS as ESPN_COMPS
+    for lg_name in list(LEAGUE_NAMES.values()) + list(ESPN_COMPS.values()):
         count = league_counts.get(lg_name, 0)
         if count == 0:
             logger.warning(f"No fixtures found for {lg_name} — API may have limited data for this period")

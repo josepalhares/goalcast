@@ -19,6 +19,8 @@ COMPETITIONS = {
     "FL1": "Ligue 1",
     "PPL": "Liga Portugal",
     "CL": "Champions League",
+    "WC": "World Cup",
+    "EC": "European Championship",
     # EL (Europa League) not available on free tier
 }
 

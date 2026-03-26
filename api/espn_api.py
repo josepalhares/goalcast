@@ -1,4 +1,4 @@
-"""ESPN API client for Europa League and Conference League data."""
+"""ESPN API client for Europa League, Conference League, and international football."""
 import httpx
 from typing import List, Dict
 from datetime import datetime
@@ -12,6 +12,20 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 COMPETITIONS = {
     "uefa.europa": "Europa League",
     "uefa.europa.conf": "Conference League",
+    # International
+    "fifa.worldq.uefa": "WC Qualifiers UEFA",
+    "fifa.worldq.conmebol": "WC Qualifiers CONMEBOL",
+    "fifa.worldq.concacaf": "WC Qualifiers CONCACAF",
+    "uefa.nations": "Nations League",
+    "fifa.friendly": "Friendlies",
+    "fifa.world": "World Cup",
+    "uefa.euro": "European Championship",
+}
+
+# Competitions that run year-round (not on a Sep-May club season schedule)
+_INTL_COMPETITIONS = {
+    "fifa.worldq.uefa", "fifa.worldq.conmebol", "fifa.worldq.concacaf",
+    "uefa.nations", "fifa.friendly", "fifa.world", "uefa.euro",
 }
 
 # ESPN status → our internal status code
@@ -102,21 +116,25 @@ def _normalize_espn_match(event: dict, league_name: str) -> Dict:
 
 
 async def fetch_espn_matches(days_back: int = 90) -> List[Dict]:
-    """Fetch Europa League + Conference League matches from ESPN.
+    """Fetch club + international matches from ESPN.
 
     Uses date-range query to get full season data in minimal API calls.
+    International competitions use a wider window (year-round schedule).
     """
     today = datetime.now()
-    # Build date range: from start of season to 14 days ahead
-    date_from = "20250901"
+    club_date_from = "20250901"
+    intl_date_from = "20250101"
     date_to = today.strftime("%Y%m%d")
-    date_range = f"{date_from}-{date_to}"
 
     all_matches = []
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         for espn_code, league_name in COMPETITIONS.items():
             try:
+                # International competitions run year-round; club competitions start in September
+                df = intl_date_from if espn_code in _INTL_COMPETITIONS else club_date_from
+                date_range = f"{df}-{date_to}"
+
                 # Fetch past/current matches
                 url = f"{ESPN_BASE}/{espn_code}/scoreboard"
                 params = {"dates": date_range, "limit": 200}
