@@ -5870,9 +5870,19 @@
             "picture_url": "https://lh3.googleusercontent.com/a/ACg8ocJWVc_ODpSDDw_74SHEN6LJRy4VVdF2ld69Jg7nOCOXB9xuAsM4=s96-c",
             "created_at": "2026-03-25 00:23:39",
             "last_login": "2026-03-25 00:23:39"
+        },
+        {
+            "id": 2,
+            "email": "daniel.fpl123@gmail.com",
+            "name": "Daniel Louren\u00e7o",
+            "role": "user",
+            "picture_url": "https://lh3.googleusercontent.com/a/ACg8ocKdC-_uQTI8dJFdCychRzCl3qA5NtSrffQn8Dz8xlfA0qAXKCo=s96-c",
+            "created_at": "2026-03-25 21:24:37",
+            "last_login": "2026-03-25 21:24:37"
         }
     ],
     "allowed_emails": [
+        "daniel.fpl123@gmail.com",
         "jose.palhares@zendesk.com",
         "josepalhares@gmail.com",
         "josepalhares@hotmail.com"
@@ -5909,5 +5919,5 @@
             "away": 0
         }
     ],
-    "exported_at": "2026-03-25T00:21:56.600999"
+    "exported_at": "2026-03-25T06:53:17.580690"
 }
