@@ -22,12 +22,6 @@ COMPETITIONS = {
     "uefa.euro": "European Championship",
 }
 
-# Competitions that run year-round (not on a Sep-May club season schedule)
-_INTL_COMPETITIONS = {
-    "fifa.worldq.uefa", "fifa.worldq.conmebol", "fifa.worldq.concacaf",
-    "uefa.nations", "fifa.friendly", "fifa.world", "uefa.euro",
-}
-
 # ESPN status → our internal status code
 STATUS_MAP = {
     "STATUS_FULL_TIME": "FT",
@@ -118,12 +112,15 @@ def _normalize_espn_match(event: dict, league_name: str) -> Dict:
 async def fetch_espn_matches(days_back: int = 90) -> List[Dict]:
     """Fetch club + international matches from ESPN.
 
-    Uses date-range query to get full season data in minimal API calls.
-    International competitions use a wider window (year-round schedule).
+    Uses date-range query to get season data. ESPN rejects ranges >~12 months,
+    so we use max(season_start, 6_months_ago) to stay safe.
     """
     today = datetime.now()
-    club_date_from = "20250901"
-    intl_date_from = "20250101"
+    from datetime import timedelta
+    season_start = "20250901"
+    six_months_ago = (today - timedelta(days=180)).strftime("%Y%m%d")
+    # Use whichever is more recent — keeps range under ESPN's limit
+    date_from = max(season_start, six_months_ago)
     date_to = today.strftime("%Y%m%d")
 
     all_matches = []
@@ -131,9 +128,7 @@ async def fetch_espn_matches(days_back: int = 90) -> List[Dict]:
     async with httpx.AsyncClient(timeout=15.0) as client:
         for espn_code, league_name in COMPETITIONS.items():
             try:
-                # International competitions run year-round; club competitions start in September
-                df = intl_date_from if espn_code in _INTL_COMPETITIONS else club_date_from
-                date_range = f"{df}-{date_to}"
+                date_range = f"{date_from}-{date_to}"
 
                 # Fetch past/current matches
                 url = f"{ESPN_BASE}/{espn_code}/scoreboard"
