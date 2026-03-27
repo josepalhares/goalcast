@@ -1,138 +1,84 @@
 """National team Elo ratings for international football predictions.
 
-ClubElo only tracks club teams. This module provides approximate Elo ratings
-for national teams so international matches aren't silently skipped.
+ClubElo only tracks club teams. This module provides Elo ratings for national
+teams sourced from eloratings.net (scraped weekly via scripts/scrape_national_elo.py).
 
-Ratings are approximate values on the ClubElo scale (~1700-2150).
-Teams below 1700 are intentionally excluded — this naturally filters tiny
-nations from friendlies since _find_elo() returns None and do_refresh() skips them.
-
-Source: approximate values calibrated to eloratings.net (March 2026).
-Update quarterly or after major tournaments.
+Loads from data/national_elo.json if available, otherwise falls back to a
+hardcoded snapshot. Teams below the ELO_THRESHOLD are excluded — this naturally
+filters tiny nations from friendlies since _find_elo() returns None and
+do_refresh() skips them.
 """
+import json
+import logging
+from pathlib import Path
 from typing import Optional
 
-# ~80 national teams, roughly top-50 per confederation
-# Scale: ClubElo-compatible (top clubs ~2050, top nations ~2100)
-NATIONAL_TEAM_ELO: dict[str, float] = {
-    # UEFA
-    "France": 2080,
-    "Spain": 2060,
-    "England": 2040,
-    "Portugal": 2030,
-    "Germany": 2010,
-    "Netherlands": 2000,
-    "Belgium": 1970,
-    "Italy": 1980,
-    "Croatia": 1940,
-    "Switzerland": 1900,
-    "Denmark": 1890,
-    "Austria": 1870,
-    "Turkey": 1860,
-    "Ukraine": 1850,
-    "Sweden": 1840,
-    "Serbia": 1840,
-    "Poland": 1830,
-    "Czech Republic": 1820,
-    "Romania": 1810,
-    "Hungary": 1810,
-    "Scotland": 1800,
-    "Norway": 1800,
-    "Greece": 1790,
-    "Wales": 1780,
-    "Slovakia": 1780,
-    "Republic of Ireland": 1770,
-    "Finland": 1760,
-    "Albania": 1760,
-    "North Macedonia": 1740,
-    "Iceland": 1740,
-    "Bosnia and Herzegovina": 1750,
-    "Slovenia": 1750,
-    "Georgia": 1750,
-    "Montenegro": 1730,
-    "Northern Ireland": 1720,
-    "Bulgaria": 1720,
-    "Luxembourg": 1710,
-    "Kosovo": 1710,
-    # CONMEBOL
-    "Argentina": 2120,
-    "Brazil": 2100,
-    "Uruguay": 1950,
-    "Colombia": 1920,
-    "Ecuador": 1850,
-    "Chile": 1830,
-    "Paraguay": 1780,
-    "Peru": 1770,
-    "Venezuela": 1750,
-    "Bolivia": 1710,
-    # CONCACAF
-    "Mexico": 1870,
-    "United States": 1860,
-    "Canada": 1800,
-    "Costa Rica": 1760,
-    "Panama": 1740,
-    "Jamaica": 1720,
-    "Honduras": 1710,
-    # AFC
-    "Japan": 1880,
-    "South Korea": 1860,
-    "Iran": 1840,
-    "Australia": 1820,
-    "Saudi Arabia": 1790,
-    "Qatar": 1750,
-    "Iraq": 1740,
-    "Uzbekistan": 1730,
-    "China": 1720,
-    "United Arab Emirates": 1720,
-    # CAF
-    "Morocco": 1900,
-    "Senegal": 1870,
-    "Nigeria": 1840,
-    "Egypt": 1830,
-    "Ivory Coast": 1820,
-    "Cameroon": 1800,
-    "Algeria": 1790,
-    "Tunisia": 1780,
-    "Ghana": 1770,
-    "South Africa": 1740,
-    "Mali": 1760,
-    "DR Congo": 1740,
+logger = logging.getLogger(__name__)
+
+ELO_THRESHOLD = 1500  # Skip teams below this (filters ~100 tiny nations from friendlies)
+
+_JSON_PATH = Path(__file__).parent.parent / "data" / "national_elo.json"
+
+# Hardcoded fallback (approximate, used only if JSON is missing)
+_FALLBACK_ELO: dict[str, float] = {
+    "Spain": 2172, "Argentina": 2113, "France": 2070, "England": 2042,
+    "Colombia": 1986, "Portugal": 1976, "Brazil": 1970, "Netherlands": 1959,
+    "Croatia": 1944, "Ecuador": 1933, "Norway": 1922, "Germany": 1910,
+    "Switzerland": 1897, "Uruguay": 1890, "Turkey": 1885, "Japan": 1878,
+    "Denmark": 1872, "Senegal": 1869, "Italy": 1866, "Mexico": 1857,
+    "Belgium": 1850, "Paraguay": 1833, "Austria": 1818, "Morocco": 1806,
+    "Canada": 1805, "Albania": 1790, "South Korea": 1784, "Australia": 1774,
+    "Serbia": 1768, "Greece": 1761, "Ukraine": 1760, "Iran": 1755,
+    "United States": 1747, "Poland": 1746, "Chile": 1743, "Nigeria": 1739,
+    "Kosovo": 1738, "Panama": 1733, "Algeria": 1728, "Uzbekistan": 1728,
+    "Czech Republic": 1723, "Venezuela": 1715, "Peru": 1708, "Wales": 1703,
+    "Sweden": 1702, "Hungary": 1698, "Republic of Ireland": 1696,
+    "Slovenia": 1695, "Jordan": 1689, "Bolivia": 1670, "Slovakia": 1663,
+    "Egypt": 1659, "DR Congo": 1640, "Romania": 1637, "Ivory Coast": 1637,
+    "Israel": 1634, "Costa Rica": 1632, "Tunisia": 1614, "Cameroon": 1606,
+    "Northern Ireland": 1595, "Saudi Arabia": 1592, "Mali": 1589,
+    "North Macedonia": 1584, "Bosnia and Herzegovina": 1584, "Iraq": 1582,
+    "Honduras": 1567, "Iceland": 1562, "New Zealand": 1552, "Jamaica": 1550,
+    "Cape Verde": 1549, "Haiti": 1542, "Finland": 1541,
+    "United Arab Emirates": 1540, "South Africa": 1528, "Ghana": 1509,
 }
+
+
+def _load_elo_dict() -> dict[str, float]:
+    """Load ratings from JSON file, filtering by threshold. Falls back to hardcoded."""
+    if _JSON_PATH.exists():
+        try:
+            data = json.loads(_JSON_PATH.read_text())
+            ratings = data.get("ratings", {})
+            filtered = {k: v for k, v in ratings.items() if v >= ELO_THRESHOLD}
+            logger.info(f"Loaded {len(filtered)} national team Elo ratings from {_JSON_PATH} (fetched {data.get('fetched', '?')})")
+            return filtered
+        except Exception as e:
+            logger.warning(f"Failed to load {_JSON_PATH}: {e}, using fallback")
+    return dict(_FALLBACK_ELO)
+
+
+NATIONAL_TEAM_ELO: dict[str, float] = _load_elo_dict()
 
 # Variant names → canonical key in NATIONAL_TEAM_ELO
 NATIONAL_TEAM_ALIASES: dict[str, str] = {
     # ESPN variants
-    "Türkiye": "Turkey",
-    "Korea Republic": "South Korea",
-    "USA": "United States",
+    "Türkiye": "Turkey", "Turkiye": "Turkey",
+    "Korea Republic": "South Korea", "S. Korea": "South Korea",
+    "USA": "United States", "United States of America": "United States",
     "IR Iran": "Iran",
-    "Côte d'Ivoire": "Ivory Coast",
-    "Cote d'Ivoire": "Ivory Coast",
-    "Congo DR": "DR Congo",
-    "Dem. Rep. Congo": "DR Congo",
+    "Côte d'Ivoire": "Ivory Coast", "Cote d'Ivoire": "Ivory Coast",
+    "Congo DR": "DR Congo", "Dem. Rep. Congo": "DR Congo",
     "Bosnia-Herzegovina": "Bosnia and Herzegovina",
     "Bosnia & Herzegovina": "Bosnia and Herzegovina",
-    "Czech Republic": "Czech Republic",
-    "Czechia": "Czech Republic",
-    # football-data.org variants
-    "Turkiye": "Turkey",
-    "Korea, South": "South Korea",
-    "Korea DPR": "North Korea",
-    "United States of America": "United States",
-    "Eire": "Republic of Ireland",
-    "Ireland": "Republic of Ireland",
-    "North Macedonia": "North Macedonia",
-    "FYR Macedonia": "North Macedonia",
-    "Chinese Taipei": "Taiwan",
-    "UAE": "United Arab Emirates",
-    # Common short forms
-    "S. Korea": "South Korea",
-    "N. Ireland": "Northern Ireland",
-    "N. Macedonia": "North Macedonia",
     "Bosnia": "Bosnia and Herzegovina",
-    "DR Congo": "DR Congo",
-    "Rep. of Ireland": "Republic of Ireland",
-    "Rep of Ireland": "Republic of Ireland",
+    "Czechia": "Czech Republic",
+    "Eire": "Republic of Ireland", "Ireland": "Republic of Ireland",
+    "Rep. of Ireland": "Republic of Ireland", "Rep of Ireland": "Republic of Ireland",
+    "FYR Macedonia": "North Macedonia", "N. Macedonia": "North Macedonia",
+    "N. Ireland": "Northern Ireland",
+    "UAE": "United Arab Emirates",
+    "Kyrgyz Republic": "Kyrgyzstan",
 }
 
 
@@ -141,16 +87,13 @@ def get_national_elo(team_name: str) -> Optional[float]:
 
     Returns None if not found — this intentionally filters out tiny nations.
     """
-    # Direct lookup
     if team_name in NATIONAL_TEAM_ELO:
         return NATIONAL_TEAM_ELO[team_name]
 
-    # Via alias
     canonical = NATIONAL_TEAM_ALIASES.get(team_name)
     if canonical and canonical in NATIONAL_TEAM_ELO:
         return NATIONAL_TEAM_ELO[canonical]
 
-    # Case-insensitive fallback
     name_lower = team_name.lower()
     for key, elo in NATIONAL_TEAM_ELO.items():
         if key.lower() == name_lower:
