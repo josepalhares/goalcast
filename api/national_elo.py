@@ -15,7 +15,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-ELO_THRESHOLD = 1500  # Skip teams below this (filters ~100 tiny nations from friendlies)
+ELO_THRESHOLD = 800  # Skip only the ~30 smallest territories (keeps all WC qualifier + Nations League teams)
 
 _JSON_PATH = Path(__file__).parent.parent / "data" / "national_elo.json"
 
@@ -41,6 +41,24 @@ _FALLBACK_ELO: dict[str, float] = {
     "Honduras": 1567, "Iceland": 1562, "New Zealand": 1552, "Jamaica": 1550,
     "Cape Verde": 1549, "Haiti": 1542, "Finland": 1541,
     "United Arab Emirates": 1540, "South Africa": 1528, "Ghana": 1509,
+    "Belarus": 1503, "Oman": 1490, "Guinea": 1486, "Syria": 1486,
+    "Palestine": 1470, "Suriname": 1457, "Bulgaria": 1453, "Montenegro": 1443,
+    "Curacao": 1440, "China": 1436, "Libya": 1425, "Qatar": 1425,
+    "Gambia": 1424, "Luxembourg": 1424, "Kazakhstan": 1421, "Bahrain": 1418,
+    "Benin": 1410, "Gabon": 1405, "Niger": 1404, "Trinidad and Tobago": 1399,
+    "Uganda": 1394, "Equatorial Guinea": 1391, "Armenia": 1389,
+    "Faroe Islands": 1381, "North Korea": 1375, "Comoros": 1374,
+    "Mozambique": 1372, "Zambia": 1370, "Madagascar": 1368, "Thailand": 1368,
+    "Estonia": 1359, "Sudan": 1350, "Sierra Leone": 1344, "Kenya": 1344,
+    "Zimbabwe": 1342, "Togo": 1342, "Indonesia": 1341, "Azerbaijan": 1339,
+    "Lebanon": 1332, "Vietnam": 1331, "Kuwait": 1328, "Nicaragua": 1328,
+    "El Salvador": 1327, "Malaysia": 1313, "Tanzania": 1312, "Mauritania": 1311,
+    "Rwanda": 1308, "Kyrgyzstan": 1305, "Namibia": 1300, "Liberia": 1299,
+    "Tajikistan": 1297, "Latvia": 1297, "Lithuania": 1297, "Cyprus": 1295,
+    "Dominican Republic": 1290, "New Caledonia": 1286, "Botswana": 1285,
+    "Guyana": 1275, "Moldova": 1268, "Ethiopia": 1264, "Malawi": 1252,
+    "Malta": 1249, "Guinea-Bissau": 1244, "Turkmenistan": 1217,
+    "Lesotho": 1200,
 }
 
 
