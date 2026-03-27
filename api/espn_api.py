@@ -121,7 +121,7 @@ async def fetch_espn_matches(days_back: int = 90) -> List[Dict]:
     six_months_ago = (today - timedelta(days=180)).strftime("%Y%m%d")
     # Use whichever is more recent — keeps range under ESPN's limit
     date_from = max(season_start, six_months_ago)
-    date_to = today.strftime("%Y%m%d")
+    date_to = (today + timedelta(days=14)).strftime("%Y%m%d")  # Include upcoming fixtures
 
     all_matches = []
 
