@@ -132,7 +132,7 @@ async def fetch_espn_matches(days_back: int = 90) -> List[Dict]:
 
                 # Fetch past/current matches
                 url = f"{ESPN_BASE}/{espn_code}/scoreboard"
-                params = {"dates": date_range, "limit": 200}
+                params = {"dates": date_range, "limit": 900}
                 response = await client.get(url, headers=HEADERS, params=params)
                 response.raise_for_status()
                 data = response.json()
