@@ -6,7 +6,7 @@ import logging
 
 from models import Match, Prediction, MatchWithPrediction
 from api.club_elo import fetch_elo_ratings
-from api.football_api import fetch_upcoming_fixtures, fetch_recent_results, LEAGUE_NAMES, get_request_count, clear_cache
+from api.football_api import fetch_matches as fetch_fd_matches, LEAGUE_NAMES, get_request_count, clear_cache
 from api.espn_api import fetch_espn_matches
 from api.national_elo import get_national_elo
 from prediction.engine import generate_prediction, set_calibration as set_engine_calibration, fit_model, set_dc_model, log_accuracy_report
@@ -292,45 +292,45 @@ async def get_matches(request: Request, status: Optional[str] = None) -> list:
 async def do_refresh(source: str = "manual") -> dict:
     """Core refresh logic — reusable by endpoint, background task, and auto-refresh.
 
-    Startup refreshes go back 30 days for maximum history recovery.
-    Manual/scheduled refreshes go back 14 days to conserve API calls.
+    Optimized: single-pass football-data.org (no date chunking), parallel ESPN,
+    concurrent fetching, conditional Dixon-Coles refit.
     """
-    logger.info(f"=== REFRESH ({source}): upcoming=14d, recent=14d ===")
+    import asyncio as _aio
+    logger.info(f"=== REFRESH ({source}) ===")
 
-    # Clear stale fixture cache so we get fresh API data
+    # Clear stale caches
     clear_cache()
-
-    # Clear Elo cache too so we get today's ratings
     global _elo_cache
     _elo_cache = {}
 
+    # Fetch Elo ratings (needed before processing fixtures)
     elo_ratings = await _ensure_elo_cache()
 
     before = get_request_count()
+    db_has_data = get_match_count() > 0
 
-    upcoming_fixtures = await fetch_upcoming_fixtures(days_ahead=14)
-    recent_fixtures = await fetch_recent_results(days_back=14)
-
-    # Fetch ESPN matches (Europa League, Conference League, international)
-    espn_matches = await fetch_espn_matches()
+    # Run football-data.org (single pass, rate-limited) and ESPN (all parallel) concurrently
+    (upcoming_fixtures, recent_fixtures), espn_matches = await _aio.gather(
+        fetch_fd_matches(days_back=14, days_ahead=14),
+        fetch_espn_matches(db_has_data=db_has_data),
+    )
 
     after = get_request_count()
     api_calls = after - before
-    logger.info(f"API calls this refresh: {api_calls} football-data.org + {len(espn_matches)} ESPN matches")
+    logger.info(f"API calls: {api_calls} football-data.org + {len(espn_matches)} ESPN matches")
 
-    # Log what we got per league
-    league_counts = {}
-    all_fetched = upcoming_fixtures + recent_fixtures + espn_matches
-    for f in all_fetched:
+    # Log per-league counts
+    league_counts: dict = {}
+    for f in upcoming_fixtures + recent_fixtures + espn_matches:
         lg = f["league"]["name"]
         league_counts[lg] = league_counts.get(lg, 0) + 1
     from api.espn_api import COMPETITIONS as ESPN_COMPS
     for lg_name in list(LEAGUE_NAMES.values()) + list(ESPN_COMPS.values()):
         count = league_counts.get(lg_name, 0)
         if count == 0:
-            logger.warning(f"No fixtures found for {lg_name} — API may have limited data for this period")
+            logger.warning(f"No fixtures for {lg_name}")
         else:
-            logger.info(f"  {lg_name}: {count} fixtures fetched")
+            logger.info(f"  {lg_name}: {count}")
 
     added = 0
     updated = 0
@@ -341,7 +341,6 @@ async def do_refresh(source: str = "manual") -> dict:
     ] + [
         (f, "finished") for f in recent_fixtures
     ]
-    # Add ESPN matches (determine status from fixture data)
     for f in espn_matches:
         s = f["fixture"]["status"]["short"]
         if s == "FT":
@@ -424,26 +423,30 @@ async def do_refresh(source: str = "manual") -> dict:
     if cal:
         set_engine_calibration(cal)
 
-    # Re-fit Dixon-Coles in thread pool (CPU-bound, don't block event loop)
-    import asyncio
-    with get_db() as conn:
-        finished_rows = conn.execute("""
-            SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
-            FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
-        """).fetchall()
-    dc_data = [dict(r) for r in finished_rows]
-    dc_model = await asyncio.get_event_loop().run_in_executor(None, fit_model, dc_data)
-    set_dc_model(dc_model)
+    # Only re-fit Dixon-Coles if new finished results were added (CPU-heavy, ~5s)
+    if updated > 0 or (added > 0 and any(s == "finished" for _, s in all_fixtures)):
+        import asyncio as _aio2
+        with get_db() as conn:
+            finished_rows = conn.execute("""
+                SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
+                FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
+            """).fetchall()
+        dc_data = [dict(r) for r in finished_rows]
+        dc_model = await _aio2.get_event_loop().run_in_executor(None, fit_model, dc_data)
+        set_dc_model(dc_model)
+        logger.info(f"Dixon-Coles re-fitted ({len(dc_data)} matches)")
 
-    # Log accuracy report
-    with get_db() as conn:
-        report_rows = conn.execute("""
-            SELECT m.home_team, m.away_team, m.actual_home_goals, m.actual_away_goals,
-                   m.league, p.predicted_home_goals as pred_h, p.predicted_away_goals as pred_a
-            FROM matches m JOIN predictions p ON p.match_id = m.id AND p.source = 'ai'
-            WHERE m.status = 'finished' AND m.actual_home_goals IS NOT NULL
-        """).fetchall()
-    log_accuracy_report([dict(r) for r in report_rows])
+        # Log accuracy report only when model was updated
+        with get_db() as conn:
+            report_rows = conn.execute("""
+                SELECT m.home_team, m.away_team, m.actual_home_goals, m.actual_away_goals,
+                       m.league, p.predicted_home_goals as pred_h, p.predicted_away_goals as pred_a
+                FROM matches m JOIN predictions p ON p.match_id = m.id AND p.source = 'ai'
+                WHERE m.status = 'finished' AND m.actual_home_goals IS NOT NULL
+            """).fetchall()
+        log_accuracy_report([dict(r) for r in report_rows])
+    else:
+        logger.info("Skipping Dixon-Coles refit (no new finished matches)")
 
     logger.info(
         f"Refresh ({source}) done: +{added} new, {updated} updated, "

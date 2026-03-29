@@ -1,7 +1,8 @@
 """ESPN API client for Europa League, Conference League, and international football."""
+import asyncio
 import httpx
 from typing import List, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -109,60 +110,69 @@ def _normalize_espn_match(event: dict, league_name: str) -> Dict:
     }
 
 
-async def fetch_espn_matches(days_back: int = 90) -> List[Dict]:
-    """Fetch club + international matches from ESPN.
+async def _fetch_one_competition(
+    client: httpx.AsyncClient, espn_code: str, league_name: str, date_range: str,
+) -> List[Dict]:
+    """Fetch a single ESPN competition. Returns normalized matches."""
+    try:
+        url = f"{ESPN_BASE}/{espn_code}/scoreboard"
+        params = {"dates": date_range, "limit": 900}
+        response = await client.get(url, headers=HEADERS, params=params)
+        response.raise_for_status()
+        data = response.json()
 
-    Uses date-range query to get season data. ESPN rejects ranges >~12 months,
-    so we use max(season_start, 6_months_ago) to stay safe.
+        matches = []
+        for e in data.get("events", []):
+            m = _normalize_espn_match(e, league_name)
+            if m["teams"]["home"]["name"] and m["teams"]["away"]["name"]:
+                matches.append(m)
+
+        logger.info(f"[ESPN] {league_name}: {len(matches)} matches")
+        return matches
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"[ESPN] {league_name} HTTP {e.response.status_code}")
+        return []
+    except Exception as e:
+        logger.error(f"[ESPN] {league_name} error: {e}")
+        return []
+
+
+async def fetch_espn_matches(db_has_data: bool = False) -> List[Dict]:
+    """Fetch all ESPN competitions concurrently.
+
+    When db_has_data=True, uses a shorter 30-day lookback (just updates).
+    When False (initial load), uses full 6-month range for history.
+    ESPN has no rate limit, so all 9 competitions fire in parallel.
     """
     today = datetime.now()
-    from datetime import timedelta
-    season_start = "20250901"
-    six_months_ago = (today - timedelta(days=180)).strftime("%Y%m%d")
-    # Use whichever is more recent — keeps range under ESPN's limit
-    date_from = max(season_start, six_months_ago)
-    date_to = (today + timedelta(days=14)).strftime("%Y%m%d")  # Include upcoming fixtures
+    if db_has_data:
+        date_from = (today - timedelta(days=30)).strftime("%Y%m%d")
+    else:
+        season_start = "20250901"
+        six_months_ago = (today - timedelta(days=180)).strftime("%Y%m%d")
+        date_from = max(season_start, six_months_ago)
+    date_to = (today + timedelta(days=14)).strftime("%Y%m%d")
+    date_range = f"{date_from}-{date_to}"
 
-    all_matches = []
+    logger.info(f"[ESPN] Fetching {len(COMPETITIONS)} competitions in parallel ({date_from}→{date_to})")
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        for espn_code, league_name in COMPETITIONS.items():
-            try:
-                date_range = f"{date_from}-{date_to}"
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        tasks = [
+            _fetch_one_competition(client, code, name, date_range)
+            for code, name in COMPETITIONS.items()
+        ]
+        results = await asyncio.gather(*tasks)
 
-                # Fetch past/current matches
-                url = f"{ESPN_BASE}/{espn_code}/scoreboard"
-                params = {"dates": date_range, "limit": 900}
-                response = await client.get(url, headers=HEADERS, params=params)
-                response.raise_for_status()
-                data = response.json()
-
-                events = data.get("events", [])
-                normalized = []
-                for e in events:
-                    m = _normalize_espn_match(e, league_name)
-                    if m["teams"]["home"]["name"] and m["teams"]["away"]["name"]:
-                        normalized.append(m)
-
-                logger.info(f"[ESPN] {league_name}: {len(normalized)} matches")
-                all_matches.extend(normalized)
-
-                # Also fetch upcoming (default scoreboard shows next matchday)
-                response2 = await client.get(url, headers=HEADERS)
-                response2.raise_for_status()
-                data2 = response2.json()
-                upcoming = data2.get("events", [])
-                seen_ids = {m["fixture"]["id"] for m in all_matches}
-                for e in upcoming:
-                    m = _normalize_espn_match(e, league_name)
-                    if m["fixture"]["id"] not in seen_ids and m["teams"]["home"]["name"]:
-                        normalized.append(m)
-                        all_matches.append(m)
-
-            except httpx.HTTPStatusError as e:
-                logger.error(f"[ESPN] {league_name} HTTP {e.response.status_code}")
-            except Exception as e:
-                logger.error(f"[ESPN] {league_name} error: {e}")
+    # Flatten + dedup by fixture ID
+    seen_ids: set = set()
+    all_matches: List[Dict] = []
+    for matches in results:
+        for m in matches:
+            fid = m["fixture"]["id"]
+            if fid not in seen_ids:
+                seen_ids.add(fid)
+                all_matches.append(m)
 
     finished = sum(1 for m in all_matches if m["fixture"]["status"]["short"] == "FT")
     upcoming = sum(1 for m in all_matches if m["fixture"]["status"]["short"] == "NS")

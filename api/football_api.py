@@ -2,7 +2,7 @@
 import asyncio
 import httpx
 import os
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from datetime import datetime, timedelta
 import logging
 
@@ -102,15 +102,21 @@ async def _fetch_competition_matches(
         return []
 
 
-async def _fetch_all_competitions(date_from: str, date_to: str) -> List[Dict]:
-    """Fetch matches for ALL competitions in a date range.
-    One API call per competition — gives complete data unlike general /matches endpoint.
-    Rate limit: 10 req/min on free tier, we do 7 sequentially with small delays.
+async def fetch_matches(days_back: int = 14, days_ahead: int = 14) -> Tuple[List[Dict], List[Dict]]:
+    """Fetch all competitions in a single pass. Returns (upcoming, recent).
+
+    No date chunking — each competition is fetched once for the full range.
+    Rate limit: 10 req/min on free tier, ~6s between requests.
     """
     api_key = get_api_key()
     headers = {"X-Auth-Token": api_key}
+
+    today = datetime.now()
+    date_from = (today - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    date_to = (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+
     all_matches = []
-    seen_ids = set()
+    seen_ids: set = set()
 
     async with httpx.AsyncClient(timeout=20.0) as client:
         for comp_code in COMPETITIONS:
@@ -121,58 +127,22 @@ async def _fetch_all_competitions(date_from: str, date_to: str) -> List[Dict]:
                 if m["id"] not in seen_ids:
                     seen_ids.add(m["id"])
                     all_matches.append(m)
-            # Free tier: 10 requests/minute. Space calls ~7s apart to stay safe.
-            await asyncio.sleep(7)
+            # Free tier: 10 requests/minute → 6s between calls
+            await asyncio.sleep(6)
 
-    logger.info(f"All competitions {date_from}→{date_to}: {len(all_matches)} total matches")
-    return all_matches
+    upcoming = [_normalize_match(m) for m in all_matches if m["status"] in ("TIMED", "SCHEDULED")]
+    recent = [_normalize_match(m) for m in all_matches if m["status"] == "FINISHED"]
 
-
-async def _fetch_range_chunked(date_from: str, date_to: str) -> List[Dict]:
-    """Fetch matches in 10-day chunks across all competitions."""
-    from_dt = datetime.strptime(date_from, "%Y-%m-%d")
-    to_dt = datetime.strptime(date_to, "%Y-%m-%d")
-    all_matches = []
-    seen_ids = set()
-
-    while from_dt <= to_dt:
-        chunk_end = min(from_dt + timedelta(days=9), to_dt)
-        chunk = await _fetch_all_competitions(
-            from_dt.strftime("%Y-%m-%d"),
-            chunk_end.strftime("%Y-%m-%d"),
-        )
-        for m in chunk:
-            if m["id"] not in seen_ids:
-                seen_ids.add(m["id"])
-                all_matches.append(m)
-        from_dt = chunk_end + timedelta(days=1)
-
-    return all_matches
+    logger.info(f"football-data.org: {len(upcoming)} upcoming + {len(recent)} recent ({date_from} to {date_to})")
+    return upcoming, recent
 
 
+# Legacy wrappers (keep backward compat for any imports)
 async def fetch_upcoming_fixtures(days_ahead: int = 14) -> List[Dict]:
-    """Fetch upcoming fixtures (TIMED or SCHEDULED). Returns normalized format."""
-    today = datetime.now()
-    date_from = today.strftime("%Y-%m-%d")
-    date_to = (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
-
-    all_matches = await _fetch_range_chunked(date_from, date_to)
-    upcoming = [m for m in all_matches if m["status"] in ("TIMED", "SCHEDULED")]
-
-    normalized = [_normalize_match(m) for m in upcoming]
-    logger.info(f"Upcoming: {len(normalized)} fixtures ({date_from} to {date_to})")
-    return normalized
+    upcoming, _ = await fetch_matches(days_back=0, days_ahead=days_ahead)
+    return upcoming
 
 
 async def fetch_recent_results(days_back: int = 14) -> List[Dict]:
-    """Fetch finished results. Returns normalized format."""
-    today = datetime.now()
-    date_from = (today - timedelta(days=days_back)).strftime("%Y-%m-%d")
-    date_to = today.strftime("%Y-%m-%d")
-
-    all_matches = await _fetch_range_chunked(date_from, date_to)
-    finished = [m for m in all_matches if m["status"] == "FINISHED"]
-
-    normalized = [_normalize_match(m) for m in finished]
-    logger.info(f"Recent: {len(normalized)} results ({date_from} to {date_to})")
-    return normalized
+    _, recent = await fetch_matches(days_back=days_back, days_ahead=0)
+    return recent
