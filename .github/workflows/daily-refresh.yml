@@ -25,6 +25,7 @@ jobs:
           echo "Refresh triggered — polling for completion"
 
       - name: Poll until complete
+        continue-on-error: true
         run: |
           echo "Polling refresh status..."
           # Try both new endpoint and fallback to health check

@@ -423,28 +423,36 @@ async def do_refresh(source: str = "manual") -> dict:
     if cal:
         set_engine_calibration(cal)
 
-    # Only re-fit Dixon-Coles if new finished results were added (CPU-heavy, ~5s)
+    # Only re-fit Dixon-Coles if new finished results were added
     if updated > 0 or (added > 0 and any(s == "finished" for _, s in all_fixtures)):
-        import asyncio as _aio2
-        with get_db() as conn:
-            finished_rows = conn.execute("""
-                SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
-                FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
-            """).fetchall()
-        dc_data = [dict(r) for r in finished_rows]
-        dc_model = await _aio2.get_event_loop().run_in_executor(None, fit_model, dc_data)
-        set_dc_model(dc_model)
-        logger.info(f"Dixon-Coles re-fitted ({len(dc_data)} matches)")
+        try:
+            import asyncio as _aio2
+            with get_db() as conn:
+                # Cap to most recent 200 finished matches to keep fitting fast
+                finished_rows = conn.execute("""
+                    SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
+                    FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
+                    ORDER BY match_date DESC LIMIT 200
+                """).fetchall()
+            dc_data = [dict(r) for r in finished_rows]
+            dc_model = await _aio2.get_event_loop().run_in_executor(None, fit_model, dc_data)
+            set_dc_model(dc_model)
+            logger.info(f"Dixon-Coles re-fitted ({len(dc_data)} matches)")
+        except Exception as e:
+            logger.error(f"Dixon-Coles fitting failed (non-fatal): {e}")
 
-        # Log accuracy report only when model was updated
-        with get_db() as conn:
-            report_rows = conn.execute("""
-                SELECT m.home_team, m.away_team, m.actual_home_goals, m.actual_away_goals,
-                       m.league, p.predicted_home_goals as pred_h, p.predicted_away_goals as pred_a
-                FROM matches m JOIN predictions p ON p.match_id = m.id AND p.source = 'ai'
-                WHERE m.status = 'finished' AND m.actual_home_goals IS NOT NULL
-            """).fetchall()
-        log_accuracy_report([dict(r) for r in report_rows])
+        # Log accuracy report
+        try:
+            with get_db() as conn:
+                report_rows = conn.execute("""
+                    SELECT m.home_team, m.away_team, m.actual_home_goals, m.actual_away_goals,
+                           m.league, p.predicted_home_goals as pred_h, p.predicted_away_goals as pred_a
+                    FROM matches m JOIN predictions p ON p.match_id = m.id AND p.source = 'ai'
+                    WHERE m.status = 'finished' AND m.actual_home_goals IS NOT NULL
+                """).fetchall()
+            log_accuracy_report([dict(r) for r in report_rows])
+        except Exception as e:
+            logger.error(f"Accuracy report failed (non-fatal): {e}")
     else:
         logger.info("Skipping Dixon-Coles refit (no new finished matches)")
 
@@ -471,16 +479,25 @@ async def do_refresh(source: str = "manual") -> dict:
 
 
 _is_refreshing = False
+_refresh_started_at: float = 0
+_REFRESH_TIMEOUT = 300  # 5 minutes — auto-reset if stuck
 
 
 def _start_bg_refresh(source: str = "manual"):
     """Fire a refresh as a background asyncio task. Returns immediately."""
     import asyncio as _aio
-    global _is_refreshing
+    global _is_refreshing, _refresh_started_at
+
+    # Auto-reset if stuck for > 5 minutes
+    if _is_refreshing and (_time.time() - _refresh_started_at) > _REFRESH_TIMEOUT:
+        logger.warning("Refresh was stuck — auto-resetting _is_refreshing")
+        _is_refreshing = False
+
     if _is_refreshing:
         return False
 
     _is_refreshing = True
+    _refresh_started_at = _time.time()
 
     async def _bg():
         global _is_refreshing
