@@ -127,8 +127,8 @@ async def fetch_matches(days_back: int = 14, days_ahead: int = 14) -> Tuple[List
                 if m["id"] not in seen_ids:
                     seen_ids.add(m["id"])
                     all_matches.append(m)
-            # Free tier: 10 requests/minute → 6s between calls
-            await asyncio.sleep(6)
+            # Free tier: 10 req/min. 9 requests × 4s = 36s total, well within 60s window.
+            await asyncio.sleep(4)
 
     upcoming = [_normalize_match(m) for m in all_matches if m["status"] in ("TIMED", "SCHEDULED")]
     recent = [_normalize_match(m) for m in all_matches if m["status"] == "FINISHED"]

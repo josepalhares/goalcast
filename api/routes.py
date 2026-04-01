@@ -423,36 +423,41 @@ async def do_refresh(source: str = "manual") -> dict:
     if cal:
         set_engine_calibration(cal)
 
-    # Only re-fit Dixon-Coles if new finished results were added
+    # Dixon-Coles fitting runs in background AFTER refresh — doesn't block the response.
+    # Only domestic leagues (cups add 100+ one-off teams that slow the optimizer).
     if updated > 0 or (added > 0 and any(s == "finished" for _, s in all_fixtures)):
-        try:
-            import asyncio as _aio2
-            with get_db() as conn:
-                # Cap to most recent 200 finished matches to keep fitting fast
-                finished_rows = conn.execute("""
-                    SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
-                    FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
-                    ORDER BY match_date DESC LIMIT 200
-                """).fetchall()
-            dc_data = [dict(r) for r in finished_rows]
-            dc_model = await _aio2.get_event_loop().run_in_executor(None, fit_model, dc_data)
-            set_dc_model(dc_model)
-            logger.info(f"Dixon-Coles re-fitted ({len(dc_data)} matches)")
-        except Exception as e:
-            logger.error(f"Dixon-Coles fitting failed (non-fatal): {e}")
+        import asyncio as _aio2
 
-        # Log accuracy report
-        try:
-            with get_db() as conn:
-                report_rows = conn.execute("""
-                    SELECT m.home_team, m.away_team, m.actual_home_goals, m.actual_away_goals,
-                           m.league, p.predicted_home_goals as pred_h, p.predicted_away_goals as pred_a
-                    FROM matches m JOIN predictions p ON p.match_id = m.id AND p.source = 'ai'
-                    WHERE m.status = 'finished' AND m.actual_home_goals IS NOT NULL
-                """).fetchall()
-            log_accuracy_report([dict(r) for r in report_rows])
-        except Exception as e:
-            logger.error(f"Accuracy report failed (non-fatal): {e}")
+        async def _fit_bg():
+            try:
+                _domestic = ('Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Liga Portugal')
+                with get_db() as conn:
+                    finished_rows = conn.execute("""
+                        SELECT home_team, away_team, actual_home_goals, actual_away_goals, match_date, league
+                        FROM matches WHERE status = 'finished' AND actual_home_goals IS NOT NULL
+                              AND league IN (?,?,?,?,?,?)
+                        ORDER BY match_date DESC LIMIT 150
+                    """, _domestic).fetchall()
+                dc_data = [dict(r) for r in finished_rows]
+                dc_model = await _aio2.get_event_loop().run_in_executor(None, fit_model, dc_data)
+                set_dc_model(dc_model)
+                logger.info(f"Dixon-Coles fitted in background ({len(dc_data)} matches)")
+            except Exception as e:
+                logger.error(f"Dixon-Coles fitting failed (non-fatal): {e}")
+            try:
+                with get_db() as conn:
+                    report_rows = conn.execute("""
+                        SELECT m.home_team, m.away_team, m.actual_home_goals, m.actual_away_goals,
+                               m.league, p.predicted_home_goals as pred_h, p.predicted_away_goals as pred_a
+                        FROM matches m JOIN predictions p ON p.match_id = m.id AND p.source = 'ai'
+                        WHERE m.status = 'finished' AND m.actual_home_goals IS NOT NULL
+                    """).fetchall()
+                log_accuracy_report([dict(r) for r in report_rows])
+            except Exception as e:
+                logger.error(f"Accuracy report failed (non-fatal): {e}")
+
+        _aio2.create_task(_fit_bg())
+        logger.info("Dixon-Coles fitting started in background")
     else:
         logger.info("Skipping Dixon-Coles refit (no new finished matches)")
 
