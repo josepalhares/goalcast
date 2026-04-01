@@ -197,7 +197,7 @@
 
         <!-- Matches Tab -->
         <div x-show="activeTab === 'matches' && !loading" class="space-y-6">
-            <template x-for="dateGroup in groupedData" :key="dateGroup.date">
+            <template x-for="dateGroup in groupedData.slice(0, _visibleGroups)" :key="dateGroup.date">
                 <div :id="'date-' + dateGroup.date">
                     <!-- Date header -->
                     <div class="flex items-center gap-3 mb-3">
@@ -470,17 +470,27 @@
             // Filters
             filterLeagues: [],
             filterTeams: [],
+            // Pre-computed cached arrays (avoid re-filtering on every render)
+            availableLeagues: [],
+            availableTeams: [],
+            filteredMatches: [],
+            matchesTabData: [],
+            groupedData: [],
+            _visibleGroups: 15,
+            _recomputeTimer: null,
 
-            get availableLeagues() {
-                const s = new Set();
-                this.allMatches.forEach(m => s.add(m.match.league));
-                return [...s].sort();
+            _computeAvailables() {
+                const leagues = new Set();
+                const teams = new Set();
+                this.allMatches.forEach(m => {
+                    leagues.add(m.match.league);
+                    teams.add(m.match.home_team);
+                    teams.add(m.match.away_team);
+                });
+                this.availableLeagues = [...leagues].sort();
+                this.availableTeams = [...teams].sort();
             },
-            get availableTeams() {
-                const s = new Set();
-                this.allMatches.forEach(m => { s.add(m.match.home_team); s.add(m.match.away_team); });
-                return [...s].sort();
-            },
+
             isFilterActive(type) {
                 if (type === 'leagues') return this.filterLeagues.length > 0 && this.filterLeagues.length < this.availableLeagues.length;
                 if (type === 'teams') return this.filterTeams.length > 0 && this.filterTeams.length < this.availableTeams.length;
@@ -489,34 +499,32 @@
             get hasActiveFilters() {
                 return this.isFilterActive('leagues') || this.isFilterActive('teams');
             },
-            get filteredMatches() {
-                return this.allMatches.filter(item => {
-                    if (this.isFilterActive('leagues')) {
-                        if (!this.filterLeagues.includes(item.match.league)) return false;
-                    }
-                    if (this.isFilterActive('teams')) {
-                        if (!this.filterTeams.includes(item.match.home_team) && !this.filterTeams.includes(item.match.away_team)) return false;
-                    }
+
+            _recompute() {
+                // 1. Filter matches by league + team
+                const leagueActive = this.isFilterActive('leagues');
+                const teamActive = this.isFilterActive('teams');
+                const fl = this.filterLeagues;
+                const ft = this.filterTeams;
+                this.filteredMatches = this.allMatches.filter(item => {
+                    if (leagueActive && !fl.includes(item.match.league)) return false;
+                    if (teamActive && !ft.includes(item.match.home_team) && !ft.includes(item.match.away_team)) return false;
                     return true;
                 });
-            },
 
-            get matchesTabData() {
-                // Rolling window: 3 days back + today + all future
+                // 2. Matches tab: rolling window (3 days back + today + all future)
                 const today = new Date(); today.setHours(0,0,0,0);
                 const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() - 3);
                 const cutoffStr = cutoff.toISOString().slice(0,10);
-                return this.filteredMatches.filter(item => {
+                this.matchesTabData = this.filteredMatches.filter(item => {
                     const d = new Date(item.match.match_date).toISOString().slice(0,10);
                     return d >= cutoffStr;
                 });
-            },
 
-            get groupedData() {
+                // 3. Group by date → league
                 const dateMap = {};
                 this.matchesTabData.forEach(item => {
-                    const d = new Date(item.match.match_date);
-                    const dateKey = d.toISOString().slice(0, 10);
+                    const dateKey = new Date(item.match.match_date).toISOString().slice(0, 10);
                     if (!dateMap[dateKey]) dateMap[dateKey] = {};
                     const league = item.match.league;
                     if (!dateMap[dateKey][league]) dateMap[dateKey][league] = [];
@@ -524,9 +532,10 @@
                 });
 
                 const todayStr = new Date().toISOString().slice(0, 10);
+                const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
                 const dates = Object.keys(dateMap).sort();
 
-                return dates.map(date => {
+                this.groupedData = dates.map(date => {
                     const leagueNames = Object.keys(dateMap[date]).sort();
                     const leagues = leagueNames.map(league => ({
                         league,
@@ -536,9 +545,25 @@
                         open: true,
                     }));
                     const matchCount = leagues.reduce((sum, l) => sum + l.matches.length, 0);
-                    const isPast = date < todayStr;
-                    return { date, leagues, matchCount, open: !isPast };
+                    // Collapse dates older than yesterday
+                    const isOld = date < yesterdayStr;
+                    return { date, leagues, matchCount, open: !isOld };
                 });
+
+                this._visibleGroups = 15;
+            },
+
+            _debouncedRecompute() {
+                clearTimeout(this._recomputeTimer);
+                this._recomputeTimer = setTimeout(() => this._recompute(), 200);
+            },
+
+            _handleScroll() {
+                if (this.activeTab !== 'matches') return;
+                const nearBottom = (window.innerHeight + window.scrollY) >= document.body.offsetHeight - 400;
+                if (nearBottom && this._visibleGroups < this.groupedData.length) {
+                    this._visibleGroups = Math.min(this._visibleGroups + 10, this.groupedData.length);
+                }
             },
 
             async init() {
@@ -565,15 +590,18 @@
 
                 await this.loadData();
 
-                // Re-render charts when switching to History tab or when filters change
-                this.$watch('activeTab', (val) => {
-                    if (val === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
-                });
+                // Debounced recompute on filter changes
                 this.$watch('filterLeagues', () => {
+                    this._debouncedRecompute();
                     if (this.activeTab === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
                 });
                 this.$watch('filterTeams', () => {
+                    this._debouncedRecompute();
                     if (this.activeTab === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
+                });
+                // History-specific watchers (don't need _recompute, historyStats reads filteredMatches)
+                this.$watch('activeTab', (val) => {
+                    if (val === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
                 });
                 this.$watch('historyDateStart', () => {
                     if (this.activeTab === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
@@ -584,6 +612,8 @@
                 this.$watch('myPredictionsOnly', () => {
                     if (this.activeTab === 'history') { this._chartKey++; this.$nextTick(() => this.renderHistoryCharts()); }
                 });
+                // Infinite scroll
+                window.addEventListener('scroll', () => this._handleScroll(), { passive: true });
             },
 
             toggleTheme() {
@@ -626,6 +656,8 @@
                                     clearInterval(poll);
                                     this.allMatches = data;
                                     this._initUserPredictions();
+                                    this._computeAvailables();
+                                    this._recompute();
                                     this._scrollToToday();
                                     this.refreshPct = 100;
                                     this.refreshStage = `${data.length} matches loaded`;
@@ -637,6 +669,8 @@
                     }
 
                     this._initUserPredictions();
+                    this._computeAvailables();
+                    this._recompute();
                     this._scrollToToday();
                 } catch (err) {
                     this.error = err.message;
@@ -691,6 +725,8 @@
                     const r2 = await fetch('/api/matches');
                     if (r2.ok) this.allMatches = await r2.json();
                     this._initUserPredictions();
+                    this._computeAvailables();
+                    this._recompute();
 
                     this.refreshPct = 100;
                     this.refreshStage = `Done! +${summary.added} new, ${summary.updated} updated (${summary.total_in_db} total)`;
