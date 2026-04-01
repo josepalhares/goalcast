@@ -470,18 +470,54 @@ async def do_refresh(source: str = "manual") -> dict:
     }
 
 
+_is_refreshing = False
+
+
+def _start_bg_refresh(source: str = "manual"):
+    """Fire a refresh as a background asyncio task. Returns immediately."""
+    import asyncio as _aio
+    global _is_refreshing
+    if _is_refreshing:
+        return False
+
+    _is_refreshing = True
+
+    async def _bg():
+        global _is_refreshing
+        try:
+            result = await do_refresh(source=source)
+            logger.info(f"Background refresh ({source}) done: {result}")
+        except Exception as e:
+            logger.error(f"Background refresh ({source}) failed: {e}")
+        finally:
+            _is_refreshing = False
+
+    _aio.create_task(_bg())
+    return True
+
+
 @router.post("/refresh")
 async def refresh_data() -> dict:
-    """Manual refresh triggered by Refresh button."""
-    return await do_refresh(source="manual")
+    """Trigger refresh in background — returns immediately."""
+    started = _start_bg_refresh(source="manual")
+    if not started:
+        return {"status": "already_running"}
+    return {"status": "started"}
+
+
+@router.get("/refresh-status")
+async def refresh_status() -> dict:
+    """Poll this to check if a background refresh is done."""
+    return {
+        "is_refreshing": _is_refreshing,
+        "last_refresh": get_last_refresh(),
+        "matches_in_db": get_match_count(),
+    }
 
 
 @router.get("/cron-refresh")
 async def cron_refresh() -> dict:
-    """External cron endpoint — triggers refresh if last was >3 hours ago.
-    Set up a free cron at https://cron-job.org to ping this every 4 hours.
-    """
-    import asyncio
+    """External cron endpoint — triggers refresh if last was >3 hours ago."""
     last = get_last_refresh()
     if last:
         from datetime import datetime as dt
@@ -489,20 +525,12 @@ async def cron_refresh() -> dict:
             last_dt = dt.fromisoformat(last)
             age_hours = (dt.utcnow() - last_dt).total_seconds() / 3600
             if age_hours < 3:
-                return {"skipped": True, "age_hours": round(age_hours, 1), "next_eligible_in": f"{3 - age_hours:.1f}h"}
+                return {"skipped": True, "age_hours": round(age_hours, 1)}
         except Exception:
             pass
 
-    # Fire refresh in background so the cron ping returns quickly
-    async def _bg():
-        try:
-            result = await do_refresh(source="cron")
-            logger.info(f"Cron refresh result: {result}")
-        except Exception as e:
-            logger.error(f"Cron refresh failed: {e}")
-
-    asyncio.create_task(_bg())
-    return {"triggered": True, "message": "Refresh started in background"}
+    started = _start_bg_refresh(source="cron")
+    return {"triggered": started, "message": "Refresh started in background" if started else "Already running"}
 
 
 @router.get("/export")

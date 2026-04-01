@@ -687,10 +687,24 @@
             async doRefresh() {
                 this.refreshing = true;
                 this.refreshPct = 0;
-                this.refreshStage = 'Fetching team ratings...';
+                this.refreshStage = 'Starting refresh...';
                 this.error = null;
 
-                // Simulate progress while real refresh runs
+                // 1. Fire refresh (returns immediately — runs in background on server)
+                try {
+                    const r = await fetch('/api/refresh', { method: 'POST' });
+                    if (!r.ok) throw new Error('Failed to start refresh');
+                    const data = await r.json();
+                    if (data.status === 'already_running') {
+                        this.refreshStage = 'Refresh already in progress...';
+                    }
+                } catch (err) {
+                    this.refreshing = false;
+                    this.error = err.message;
+                    return;
+                }
+
+                // 2. Simulated progress stages while polling
                 const stages = [
                     [5, 'Fetching team ratings...'],
                     [15, 'Loading Premier League...'],
@@ -698,7 +712,7 @@
                     [35, 'Loading Serie A & Bundesliga...'],
                     [50, 'Loading Ligue 1 & Liga Portugal...'],
                     [60, 'Loading Champions League...'],
-                    [70, 'Updating match results...'],
+                    [70, 'Loading international matches...'],
                     [80, 'Fitting prediction model...'],
                     [88, 'Generating predictions...'],
                 ];
@@ -709,33 +723,48 @@
                         this.refreshStage = stages[stageIdx][1];
                         stageIdx++;
                     } else if (this.refreshPct < 92) {
-                        this.refreshPct += 0.3; // Slow crawl past 88%
+                        this.refreshPct += 0.3;
                     }
                 }, 3000);
 
-                try {
-                    const r = await fetch('/api/refresh', { method: 'POST' });
-                    clearInterval(ticker);
-                    if (!r.ok) throw new Error('Refresh failed');
-                    const summary = await r.json();
+                // 3. Poll /api/refresh-status until done (max 3 minutes)
+                const startedAt = Date.now();
+                const lastRefreshBefore = await fetch('/api/refresh-status').then(r => r.json()).then(d => d.last_refresh).catch(() => null);
 
-                    this.refreshPct = 95;
-                    this.refreshStage = 'Reloading matches...';
+                const poll = setInterval(async () => {
+                    try {
+                        const sr = await fetch('/api/refresh-status');
+                        if (!sr.ok) return;
+                        const status = await sr.json();
 
-                    const r2 = await fetch('/api/matches');
-                    if (r2.ok) this.allMatches = await r2.json();
-                    this._initUserPredictions();
-                    this._computeAvailables();
-                    this._recompute();
+                        // Done when: not refreshing AND last_refresh changed
+                        if (!status.is_refreshing && status.last_refresh !== lastRefreshBefore) {
+                            clearInterval(poll);
+                            clearInterval(ticker);
 
-                    this.refreshPct = 100;
-                    this.refreshStage = `Done! +${summary.added} new, ${summary.updated} updated (${summary.total_in_db} total)`;
-                    setTimeout(() => { this.refreshing = false; this._scrollToToday(); }, 1200);
-                } catch (err) {
-                    clearInterval(ticker);
-                    this.refreshing = false;
-                    this.error = err.message;
-                }
+                            this.refreshPct = 95;
+                            this.refreshStage = 'Reloading matches...';
+
+                            const r2 = await fetch('/api/matches');
+                            if (r2.ok) this.allMatches = await r2.json();
+                            this._initUserPredictions();
+                            this._computeAvailables();
+                            this._recompute();
+
+                            this.refreshPct = 100;
+                            this.refreshStage = `Done! ${status.matches_in_db} matches loaded`;
+                            setTimeout(() => { this.refreshing = false; this._scrollToToday(); }, 1200);
+                        }
+
+                        // Timeout after 3 minutes
+                        if (Date.now() - startedAt > 180000) {
+                            clearInterval(poll);
+                            clearInterval(ticker);
+                            this.refreshing = false;
+                            this.error = 'Refresh timed out — try again later';
+                        }
+                    } catch (e) {}
+                }, 5000);
             },
 
             _initUserPredictions() {
