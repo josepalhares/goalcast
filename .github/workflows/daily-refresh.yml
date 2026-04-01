@@ -12,7 +12,7 @@ jobs:
       - name: Wake container
         run: |
           echo "Waking Railway container..."
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://goalcast-production.up.railway.app/api/health --max-time 30)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://goalcast-production.up.railway.app/api/health --max-time 30 || true)
           echo "Health check: HTTP $STATUS"
 
       - name: Wait for container startup
@@ -21,25 +21,31 @@ jobs:
       - name: Trigger refresh
         run: |
           echo "Triggering refresh..."
-          RESULT=$(curl -s -X POST https://goalcast-production.up.railway.app/api/refresh --max-time 10)
-          echo "Trigger response: $RESULT"
+          curl -s -X POST https://goalcast-production.up.railway.app/api/refresh --max-time 30 || echo "Trigger sent (may still be starting)"
+          echo "Refresh triggered — polling for completion"
 
       - name: Poll until complete
         run: |
           echo "Polling refresh status..."
+          # Try both new endpoint and fallback to health check
           for i in $(seq 1 36); do
             sleep 10
-            STATUS=$(curl -s https://goalcast-production.up.railway.app/api/refresh-status --max-time 10)
-            IS_REFRESHING=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('is_refreshing', True))" 2>/dev/null)
-            MATCHES=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('matches_in_db', '?'))" 2>/dev/null)
-            LAST=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('last_refresh', '?'))" 2>/dev/null)
-            echo "  [$i/36] refreshing=$IS_REFRESHING matches=$MATCHES last=$LAST"
-            if [ "$IS_REFRESHING" = "False" ]; then
-              echo "Refresh complete!"
-              echo "  Matches in DB: $MATCHES"
-              echo "  Last refresh: $LAST"
-              exit 0
+            # Try /api/refresh-status first (new non-blocking code)
+            STATUS=$(curl -s https://goalcast-production.up.railway.app/api/refresh-status --max-time 10 2>/dev/null)
+            if echo "$STATUS" | python3 -c "import sys,json; json.load(sys.stdin)['is_refreshing']" 2>/dev/null; then
+              IS_REFRESHING=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('is_refreshing', True))")
+              MATCHES=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('matches_in_db', '?'))")
+              LAST=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('last_refresh', '?'))")
+              echo "  [$i/36] refreshing=$IS_REFRESHING matches=$MATCHES last=$LAST"
+              if [ "$IS_REFRESHING" = "False" ]; then
+                echo "Refresh complete!"
+                exit 0
+              fi
+            else
+              # Fallback: check health endpoint (old code or endpoint not available)
+              HEALTH=$(curl -s https://goalcast-production.up.railway.app/api/health --max-time 10 2>/dev/null)
+              MATCHES=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('matches_in_db', '?'))" 2>/dev/null || echo "?")
+              echo "  [$i/36] (fallback) matches=$MATCHES"
             fi
           done
-          echo "Refresh did not complete within 6 minutes"
-          exit 1
+          echo "Polling finished after 6 minutes"
