@@ -221,15 +221,16 @@ def upsert_match(
             # Only advance status: upcoming → finished (never go backward)
             new_status = status if status == "finished" else old_status
 
-            # Only set scores if we have them and they're not already set
+            # Update scores, date (may change from TBD placeholder to real kickoff), and Elo
             cursor.execute("""
                 UPDATE matches SET
                     status = ?,
+                    match_date = ?,
                     actual_home_goals = COALESCE(?, actual_home_goals),
                     actual_away_goals = COALESCE(?, actual_away_goals),
                     home_elo = ?
                 WHERE id = ?
-            """, (new_status, actual_home_goals, actual_away_goals, home_elo, row_id))
+            """, (new_status, match_date, actual_home_goals, actual_away_goals, home_elo, row_id))
             conn.commit()
             return row_id
 
