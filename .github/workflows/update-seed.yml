@@ -13,7 +13,7 @@ jobs:
 
       - name: Export seed from production
         run: |
-          curl -s https://goalcast-production.up.railway.app/api/export | python3 -m json.tool > data/seed.json
+          curl -s https://goalcast-production.up.railway.app/api/export > data/seed.json
           python3 -c "
           import json
           d = json.load(open('data/seed.json'))

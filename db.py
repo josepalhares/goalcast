@@ -608,7 +608,7 @@ def save_seed_file() -> str:
     """Export DB and write to seed.json. Returns path."""
     data = export_db_to_dict()
     SEED_PATH.parent.mkdir(exist_ok=True)
-    SEED_PATH.write_text(json.dumps(data, indent=2))
+    SEED_PATH.write_text(json.dumps(data, separators=(",", ":")))
     logger.info(f"Saved {len(data['matches'])} matches to {SEED_PATH}")
     return str(SEED_PATH)
 

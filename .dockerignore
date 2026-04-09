@@ -1,0 +1,10 @@
+.git
+__pycache__
+*.pyc
+.env
+.env.*
+data/*.db
+*.db-journal
+.DS_Store
+.github
+scripts
